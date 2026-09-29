@@ -1,0 +1,81 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "twstec/kit-foundation",
+    "description": "Base de segurança e infraestrutura do TWS Laravel Starter Kit: filtro de ataques, limites, cabeçalhos, hosts e proxies, trilha de requisições e de auditoria com redação LGPD, identificadores, dinheiro, idioma, configurações no banco, e-mail e guarda de segredos e de backup.",
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://github.com/kelvindk9w/tws-laravel-starter-kit",
+    "authors": [
+        {
+            "name": "TWS",
+            "homepage": "https://github.com/kelvindk9w"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/kelvindk9w/tws-laravel-starter-kit/issues",
+        "source": "https://github.com/kelvindk9w/tws-laravel-starter-kit/tree/desenvolvimento/packages/foundation",
+        "docs": "https://github.com/kelvindk9w/tws-laravel-starter-kit/tree/desenvolvimento/docs"
+    },
+    "keywords": [
+        "laravel",
+        "security",
+        "audit",
+        "lgpd",
+        "starter-kit"
+    ],
+    "require": {
+        "php": "^8.4",
+        "ext-bcmath": "*",
+        "ext-mbstring": "*",
+        "laravel/framework": "^13.17",
+        "spatie/laravel-backup": "^10.3"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.27",
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^4.7"
+    },
+    "autoload": {
+        "psr-4": {
+            "Twstec\\Kit\\Foundation\\": "src/"
+        },
+        "files": [
+            "src/Compat/legacy-aliases.php",
+            "src/Support/helpers.php",
+            "src/Settings/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Twstec\\Kit\\Foundation\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Twstec\\Kit\\Foundation\\FoundationServiceProvider",
+                "Twstec\\Kit\\Foundation\\Audit\\Providers\\AuditServiceProvider",
+                "Twstec\\Kit\\Foundation\\Mail\\Providers\\MailServiceProvider",
+                "Twstec\\Kit\\Foundation\\Settings\\Providers\\SettingsServiceProvider"
+            ]
+        },
+        "branch-alias": {
+            "dev-main": "2.x-dev"
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "lint": "pint --test"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "platform": {
+            "php": "8.4.24"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
