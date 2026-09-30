@@ -28,7 +28,7 @@ nem interface — e um teste de arquitetura na suíte do pacote garante isso.
 | `Localization` | Idioma da requisição (cookie, preferência da conta, padrão da plataforma) e a troca de idioma |
 | `Support` | `Platform` (a configuração da plataforma, tipada) e o helper `platform()`; guarda de segredos críticos; guardas de produção |
 | `Backup` | `backup:run` que recusa backup sem criptografia em produção |
-| `Money`, `Identifiers` | Dinheiro em centavos (formatação e cast) e identificadores públicos (UUID nas rotas, código público) |
+| `Money`, `Identifiers` | Dinheiro em centavos sem float: objeto imutável `Money` (soma, percentual em pontos-base com arredondamento explícito, rateio sem perder centavo, checagem de moeda e de estouro de 64 bits), formatação, casts `MoneyAsCents` e `AsMoney` — ver [docs/convencoes.md](https://github.com/kelvindk9w/tws-laravel-starter-kit/blob/desenvolvimento/docs/convencoes.md#dinheiro); e identificadores públicos (UUID nas rotas, código público) |
 | `Kit` (raiz) | Quais módulos do kit estão instalados — o ponto ÚNICO de detecção: `Kit::has('accounts')`, a diretiva `@kit('uploads') … @else … @endkit` nas views, as dependências entre módulos (`uploads` exige `accounts`) e, só para testes, `Kit::pretendAbsent()`. Instalado = registrado pelo Composer **e** com o provider carregável. Ver [docs/instalacao.md](https://github.com/kelvindk9w/tws-laravel-starter-kit/blob/desenvolvimento/docs/instalacao.md) |
 
 ## Instalação

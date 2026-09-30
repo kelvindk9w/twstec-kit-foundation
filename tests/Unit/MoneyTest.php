@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
+use Twstec\Kit\Foundation\Money\Arithmetic;
+use Twstec\Kit\Foundation\Money\AsMoney;
 use Twstec\Kit\Foundation\Money\Money;
+
+mutates(Money::class, Arithmetic::class, AsMoney::class);
 
 // Testes das funções globais monetárias: inteiro canônico,
 // formatado só na borda, NUNCA float.
