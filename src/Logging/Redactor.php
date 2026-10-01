@@ -49,6 +49,9 @@ final class Redactor
         'card_number', 'card_cvv', 'cvv', 'cvc', 'card_expiry',
         // Códigos de verificação (2FA) também são credenciais temporárias.
         'code', 'verification_code', 'codigo', 'codigo_verificacao',
+        // Assinatura de URL assinada (entrega de arquivo, link de e-mail):
+        // dentro da validade, quem a tem abre o recurso.
+        'signature',
     ];
 
     /**

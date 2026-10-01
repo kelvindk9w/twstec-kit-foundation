@@ -15,6 +15,8 @@ it('mascara chaves sensíveis por nome exato, case-insensitive', function (strin
     'transaction_password', 'senha', 'token', 'access_token', 'refresh_token',
     'api_key', 'api_secret', 'secret', 'client_secret', 'authorization',
     'private_key', 'webhook_secret', 'card_number', 'cvv',
+    // A assinatura de uma URL assinada abre o recurso dentro da validade.
+    'signature', 'Signature',
 ]);
 
 it('mascara chaves sensíveis por sufixo', function (string $key) {
