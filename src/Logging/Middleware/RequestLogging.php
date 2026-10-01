@@ -77,6 +77,11 @@ final class RequestLogging
     public function handle(Request $request, Closure $next): Response
     {
         if ($this->isExcluded($request)) {
+            // Fora da trilha em banco, mas com id: o job que uma rota leve
+            // despachar e a chamada de saída que ela fizer continuam
+            // correlacionados (o id só não volta no header).
+            CorrelationId::resolve($request);
+
             return $next($request);
         }
 

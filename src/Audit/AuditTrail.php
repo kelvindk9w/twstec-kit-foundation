@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
+use Twstec\Kit\Foundation\Audit\Contracts\NotAudited;
 use Twstec\Kit\Foundation\Audit\Enums\AuditOutcome;
 use Twstec\Kit\Foundation\Audit\Models\AuditEvent;
 use Twstec\Kit\Foundation\Identifiers\UuidColumn;
@@ -231,8 +232,10 @@ final class AuditTrail
      */
     public function ignores(Model $model): bool
     {
-        // A própria trilha nunca se audita (recursão).
-        if ($model instanceof AuditEvent) {
+        // A própria trilha nunca se audita (recursão), nem as outras trilhas
+        // marcadas (ex.: a das chamadas HTTP de saída — uma chamada feita
+        // durante uma ação do /admin é efeito dela, com linha própria).
+        if ($model instanceof AuditEvent || $model instanceof NotAudited) {
             return true;
         }
 

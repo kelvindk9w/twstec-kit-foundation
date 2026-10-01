@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Twstec\Kit\Foundation;
 
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Http\Kernel as HttpKernelContract;
 use Illuminate\Foundation\Http\Kernel as HttpKernel;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Middleware\TrustProxies as FrameworkTrustProxies;
 use Illuminate\Http\Request;
+use Illuminate\Log\Context\Repository as LaravelContext;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -20,6 +23,7 @@ use Twstec\Kit\Foundation\Backup\Console\GuardedBackupCommand;
 use Twstec\Kit\Foundation\Http\Middleware\TrustHosts;
 use Twstec\Kit\Foundation\Http\Middleware\TrustProxies;
 use Twstec\Kit\Foundation\Localization\PackageTranslations;
+use Twstec\Kit\Foundation\Logging\CorrelationContext;
 use Twstec\Kit\Foundation\Logging\Middleware\RequestLogging;
 use Twstec\Kit\Foundation\Logging\RequestLogChannel;
 use Twstec\Kit\Foundation\Security\ApiRateLimit;
@@ -28,10 +32,15 @@ use Twstec\Kit\Foundation\Security\Middleware\SecurityHeaders;
 use Twstec\Kit\Foundation\Security\Middleware\SecurityValidation;
 use Twstec\Kit\Foundation\Support\Platform;
 use Twstec\Kit\Foundation\Support\ProductionHardening;
+use Twstec\Kit\Foundation\Tracing\Console\PruneOutboundHttpLogs;
+use Twstec\Kit\Foundation\Tracing\Http\OutboundCorrelation;
+use Twstec\Kit\Foundation\Tracing\Queue\QueueCorrelation;
+use Twstec\Kit\Foundation\Tracing\Scheduling\ScheduleCorrelation;
 
 /**
  * O que a base do kit instala numa aplicação Laravel: configuração padrão,
- * o canal de log `request_log` (se a aplicação não tiver o dela),
+ * o canal de log `request_log` (se a aplicação não tiver o dela), o rastreio
+ * pelo correlation_id (fila, agendador e HTTP de saída — registerTracing),
  * migrations, views e traduções do e-mail, o singleton da plataforma, a troca
  * do `backup:run`, os limitadores `api` e `sensitive`, as guardas de produção
  * e — o principal — a pilha GLOBAL de middlewares de segurança, na ordem
@@ -115,7 +124,7 @@ final class FoundationServiceProvider extends ServiceProvider
      * aplicação pode publicar a própria cópia (`vendor:publish --tag=
      * foundation-config`); as chaves de primeiro nível dela prevalecem.
      */
-    private const CONFIG_FILES = ['security', 'audit', 'settings', 'platform'];
+    private const CONFIG_FILES = ['security', 'audit', 'settings', 'platform', 'tracing'];
 
     public function register(): void
     {
@@ -127,6 +136,10 @@ final class FoundationServiceProvider extends ServiceProvider
         // a aplicação não definiu o dela — o da aplicação vence. Ver
         // Logging\RequestLogChannel.
         RequestLogChannel::registerDefault($this->app->make('config'));
+
+        // O correlation_id que vale agora (requisição, job, tarefa agendada).
+        // `scoped`: o worker da fila e o Octane descartam entre um e outro.
+        $this->app->scoped(CorrelationContext::class);
 
         // Configuração centralizada da plataforma (nada hardcoded) — singleton tipado.
         $this->app->singleton(Platform::class, fn (): Platform => Platform::fromConfig());
@@ -146,6 +159,7 @@ final class FoundationServiceProvider extends ServiceProvider
         $this->registerSecurityMiddleware();
         $this->applyProductionGuards();
         $this->registerRateLimiters();
+        $this->registerTracing();
 
         // As migrations rodam direto daqui, com os MESMOS nomes de arquivo
         // que tinham quando moravam no aplicativo: um banco que já as rodou
@@ -156,6 +170,8 @@ final class FoundationServiceProvider extends ServiceProvider
         $this->registerModuleDirective();
 
         if ($this->app->runningInConsole()) {
+            $this->commands([PruneOutboundHttpLogs::class]);
+
             $this->publishes(
                 array_combine(
                     array_map(fn (string $name): string => $this->path("config/{$name}.php"), self::CONFIG_FILES),
@@ -218,6 +234,84 @@ final class FoundationServiceProvider extends ServiceProvider
         RateLimiter::for('sensitive', function (Request $request): Limit {
             return Limit::perMinute((int) config('security.rate_limit.sensitive', 5))
                 ->by((string) ($request->user()?->getAuthIdentifier() ?: $request->ip()));
+        });
+    }
+
+    /**
+     * Rastreio de ponta a ponta pelo correlation_id (ver Tracing\* e
+     * config/tracing.php), ligado pelo pacote:
+     *
+     * - FILA: todo job leva o id de quem o despachou e o restaura no worker
+     *   (`tracing.queue.enabled`);
+     * - AGENDADOR: cada tarefa ganha um id próprio, de origem `scheduler`, que
+     *   chega também ao processo filho de um `command()`; um processo de
+     *   console nascido de outro adota o id do pai;
+     * - HTTP DE SAÍDA: middleware global do cliente `Http` — cabeçalho
+     *   (`tracing.http.header.enabled`) e trilha `outbound_http_logs`
+     *   (`tracing.http.trail.enabled`), com a poda agendada.
+     *
+     * Cada desligamento é explícito e avisa no log a cada boot em produção.
+     */
+    private function registerTracing(): void
+    {
+        $events = $this->app['events'];
+
+        ScheduleCorrelation::register($events, $this->app->make(LaravelContext::class));
+
+        if ($this->app->runningInConsole()) {
+            ScheduleCorrelation::adoptFromParent($this->app->make(LaravelContext::class));
+        }
+
+        if (config('tracing.queue.enabled', true) !== false) {
+            QueueCorrelation::register($events);
+        } elseif ($this->app->isProduction()) {
+            Log::warning('TRACING_QUEUE=false: os jobs da fila NÃO carregam o correlation_id de quem os despachou (twstec/kit-foundation). O log e as trilhas de um job não se ligam mais à requisição que o originou. Ver Twstec\Kit\Foundation\Tracing\Queue\QueueCorrelation.');
+        }
+
+        $header = config('tracing.http.header.enabled', true) !== false;
+        $trail = config('tracing.http.trail.enabled', true) !== false;
+
+        if ($this->app->isProduction() && ! $header) {
+            Log::warning('TRACING_HTTP_HEADER=false: as chamadas HTTP de saída NÃO levam o correlation_id no cabeçalho (twstec/kit-foundation). O serviço externo não tem como ligar a chamada à operação de origem.');
+        }
+
+        if ($this->app->isProduction() && ! $trail) {
+            Log::warning('TRACING_HTTP_TRAIL=false: as chamadas HTTP de saída NÃO ficam registradas na trilha outbound_http_logs (twstec/kit-foundation). Uma investigação não terá o que foi enviado a serviços externos, quando, com qual status e em nome de qual operação.');
+        }
+
+        if ($header || $trail) {
+            $this->callAfterResolving(HttpFactory::class, static function (HttpFactory $factory): void {
+                OutboundCorrelation::register($factory);
+            });
+        }
+
+        $this->registerOutboundPruneSchedule($trail);
+    }
+
+    /**
+     * A poda diária da trilha de saída entra no agendador da aplicação
+     * sozinha (como a dos uploads). Cron vazio = desligada, com aviso no log
+     * a cada boot (o comando continua disponível).
+     */
+    private function registerOutboundPruneSchedule(bool $trail): void
+    {
+        if (! $trail) {
+            return;
+        }
+
+        $cron = trim((string) config('tracing.http.trail.prune_schedule', ''));
+
+        if ($cron === '' || in_array(strtolower($cron), ['false', 'off', '0'], true)) {
+            Log::warning('tracing.http.trail.prune_schedule vazio: a poda agendada da trilha de chamadas HTTP de saída (outbound-http:prune) está DESLIGADA. A tabela outbound_http_logs só encolhe rodando o comando à mão.');
+
+            return;
+        }
+
+        $this->callAfterResolving(Schedule::class, static function (Schedule $schedule) use ($cron): void {
+            $schedule->command('outbound-http:prune')
+                ->cron($cron)
+                ->withoutOverlapping()
+                ->onOneServer();
         });
     }
 

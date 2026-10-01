@@ -21,7 +21,8 @@ nem interface — e um teste de arquitetura na suíte do pacote garante isso.
 | --- | --- |
 | `Security` | Filtro de ataques (XSS, SQLi, null byte, path traversal) com modos observar/bloquear e teto de inspeção; limite de requisições na borda (por IP ou prefixo IPv6) e da API; cabeçalhos de segurança e CSP; allowlist de IP do `/admin` |
 | `Http` | Proxies confiáveis e hosts confiáveis (lidos de configuração), redirecionamento seguro, envelope de erro da API, recursos base de API e o health check |
-| `Logging` | Trilha de requisições (`request_logs`, só-acréscimo), correlation id, redação LGPD de payload, mascaramento de cartão nos logs, amostragem de tráfego de varredura |
+| `Logging` | Trilha de requisições (`request_logs`, só-acréscimo), correlation id (e o contexto que diz qual vale agora), redação LGPD de payload, mascaramento de cartão nos logs, amostragem de tráfego de varredura |
+| `Tracing` | O correlation id seguindo a operação: no payload de todo job da fila (restaurado no worker), em cada tarefa do agendador e no cabeçalho de toda chamada HTTP de saída; trilha redigida das chamadas de saída (`outbound_http_logs`, só-acréscimo, com gatilho no banco) e o comando `outbound-http:prune` — ver [docs/logs-lgpd.md](https://github.com/kelvindk9w/tws-laravel-starter-kit/blob/desenvolvimento/docs/logs-lgpd.md#rastreio-de-ponta-a-ponta-fila-e-http-de-saída) |
 | `Audit` | Trilha de auditoria de ações (`audit_events`, só-acréscimo, com gatilho no banco), escopo de auditoria e o comando `audit:prune` |
 | `Mail` | Base dos e-mails (`KitMailable`, `KitMailMessage`), o layout e os componentes `<x-email::…>`, texto puro automático, galeria `/mail-preview` (registro e controller) e a recusa dos transportes que não entregam em produção |
 | `Settings` | Configurações editáveis no banco (`settings`) por cima do `.env`, com lista fechada de chaves, e o helper `setting()` |
@@ -67,7 +68,7 @@ Os providers são descobertos automaticamente (`extra.laravel.providers`):
 configurações editáveis. Em seguida:
 
 ```bash
-php artisan vendor:publish --tag=foundation-config   # opcional: security, audit, settings, platform
+php artisan vendor:publish --tag=foundation-config   # opcional: security, audit, settings, platform, tracing
 php artisan migrate
 ```
 
@@ -82,19 +83,19 @@ php artisan migrate
   `request.logging` (um alias de mesmo nome declarado pelo aplicativo
   prevalece).
 - **Configuração padrão** (`mergeConfigFrom`) de `security`, `audit`,
-  `settings` e `platform`. O aplicativo pode publicar a própria cópia
+  `settings`, `platform` e `tracing`. O aplicativo pode publicar a própria cópia
   (`--tag=foundation-config`); as chaves de primeiro nível dela prevalecem —
   é o arranjo de todo pacote Laravel. O starter mantém as quatro publicadas.
-- **Migrations** de `request_logs`, `settings` e `audit_events`, rodadas direto
-  do pacote, com os **mesmos nomes de arquivo** que tinham no aplicativo na
-  1.x: um banco que já as rodou não vê nada pendente, e um banco novo as roda
+- **Migrations** de `request_logs`, `settings`, `audit_events` e (2.x)
+  `outbound_http_logs`, rodadas direto do pacote, com os **mesmos nomes de
+  arquivo** que tinham no aplicativo na 1.x: um banco que já as rodou não vê nada pendente, e um banco novo as roda
   na mesma ordem. Não publique essas migrations.
 - **Views do e-mail** com os nomes de sempre: `<x-email::layouts.kit>`,
   `<x-email::button>` e os demais componentes, e `mail.text.auto`. Um arquivo
   de mesmo nome em `resources/views/mail/` do aplicativo prevalece. Também
   respondem pelo namespace `foundation::` (ex.: `foundation::mail.layouts.kit`).
 - **Traduções** (pt-BR, en, es) com as chaves de sempre, sem namespace:
-  `security.*`, `api.errors.*`, `mail.footer.*` e `audit.*`. **O aplicativo
+  `security.*`, `api.errors.*`, `mail.footer.*`, `audit.*` e `tracing.*`. **O aplicativo
   vence:** a pasta do pacote entra no carregador logo ANTES do `lang/` do
   aplicativo, então numa mesma chave vale o texto do aplicativo, e o pacote só
   preenche o que ele não definiu — em qualquer grupo, nos três idiomas e no
@@ -122,8 +123,19 @@ php artisan migrate
   `security.*`, `request.throttled` e `audit.*`. É registrado **só se o
   aplicativo não tiver** um `request_log` no `config/logging.php`: o do
   aplicativo vence. Sem isso, essas linhas cairiam no logger de emergência.
+- **Rastreio pelo correlation id** (`config/tracing.php`): todo job despachado
+  leva o id de quem o despachou no payload (`twsCorrelation`: só id e origem)
+  e o restaura no worker — log e trilhas; cada tarefa do agendador ganha o
+  seu (origem `scheduler`), que chega também ao processo filho; middleware
+  global do cliente `Http` que põe o id no cabeçalho `X-Correlation-Id` e
+  grava a linha redigida em `outbound_http_logs`, com a poda
+  `outbound-http:prune` agendada pelo próprio pacote. Opt-out:
+  `TRACING_QUEUE`, `TRACING_HTTP_HEADER`, `TRACING_HTTP_TRAIL` (e
+  `TRACING_HTTP_PRUNE_SCHEDULE` vazio) — aviso no log. Ler o id corrente:
+  `CorrelationId::current()`; por chamada: `Http::withoutCorrelationHeader()`
+  e `Http::withBodyInTrail()`.
 - **Singleton da plataforma** (`platform()`) e o helper `setting()`.
-- **Comando** `audit:prune`.
+- **Comandos** `audit:prune` e `outbound-http:prune`.
 
 ## O que o aplicativo liga
 

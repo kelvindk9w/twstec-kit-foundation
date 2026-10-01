@@ -17,7 +17,9 @@ use Illuminate\Support\Str;
  *    ordenado). É a chave única da linha em `request_logs`, o valor
  *    propagado no contexto do Monolog, o que sai no header de resposta
  *    X-Correlation-Id e o que o envelope de erro da API entrega ao cliente
- *    para acionar o suporte. NUNCA vem do cliente.
+ *    para acionar o suporte. NUNCA vem do cliente. Segue a operação: os
+ *    jobs despachados e as chamadas HTTP de saída levam o mesmo id (ver
+ *    CorrelationContext).
  *
  * 2. client_correlation_id (DO CLIENTE): o X-Correlation-Id que veio na
  *    requisição, saneado. É só um rótulo de rastreabilidade do chamador,
@@ -90,17 +92,45 @@ final class CorrelationId
 
         $request->attributes->set(self::ATTRIBUTE, $id);
 
-        $context = [self::ATTRIBUTE => $id];
+        // O id da requisição vira a base do contexto de correlação do
+        // processo: é ele que segue para os jobs despachados e para as
+        // chamadas HTTP de saída (e que entra no contexto do log).
+        app(CorrelationContext::class)->enterRequest($id);
 
         $client = self::fromClient($request);
 
         if ($client !== null) {
-            $context[self::CLIENT_ATTRIBUTE] = $client;
+            Log::shareContext([self::CLIENT_ATTRIBUTE => $client]);
         }
 
-        Log::shareContext($context);
-
         return $id;
+    }
+
+    /**
+     * O correlation_id que vale AGORA — o da requisição, o do job que o
+     * worker está processando (o mesmo da requisição que o despachou) ou o
+     * da tarefa do agendador. Null quando nada abriu um. Não cria id.
+     */
+    public static function current(): ?string
+    {
+        return app(CorrelationContext::class)->current();
+    }
+
+    /**
+     * Onde o id corrente nasceu (`http`, `scheduler`, `queue`, `console`).
+     */
+    public static function origin(): ?CorrelationOrigin
+    {
+        return app(CorrelationContext::class)->origin();
+    }
+
+    /**
+     * O id corrente, ou um novo quando nada abriu um (ver
+     * CorrelationContext::ensure()).
+     */
+    public static function ensure(): string
+    {
+        return app(CorrelationContext::class)->ensure();
     }
 
     /**

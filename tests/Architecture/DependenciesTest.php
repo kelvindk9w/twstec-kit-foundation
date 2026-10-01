@@ -29,7 +29,7 @@ use Symfony\Component\Finder\Finder;
  * Módulos do pacote (pastas de src/). `Compat` não é módulo: guarda só os
  * apelidos dos nomes antigos.
  */
-const FOUNDATION_MODULES = ['Identifiers', 'Money', 'Http', 'Security', 'Logging', 'Localization', 'Settings', 'Mail', 'Support', 'Backup', 'Audit'];
+const FOUNDATION_MODULES = ['Identifiers', 'Money', 'Http', 'Security', 'Logging', 'Localization', 'Settings', 'Mail', 'Support', 'Backup', 'Audit', 'Tracing'];
 
 /**
  * Grupo coeso: ciclo aceito porque os módulos são a mesma peça vista de

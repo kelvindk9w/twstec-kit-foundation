@@ -2,14 +2,20 @@
 
 declare(strict_types=1);
 
+use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Spatie\Backup\Config\Config as BackupConfig;
+use Twstec\Kit\Foundation\Logging\CorrelationId;
 use Twstec\Kit\Foundation\Mail\Exceptions\NonDeliveringMailerInProductionException;
 use Twstec\Kit\Foundation\Security\ApiRateLimit;
 use Twstec\Kit\Foundation\Support\Exceptions\MissingApplicationKeyException;
+use Twstec\Kit\Foundation\Tests\Fixtures\Tracing\ProbeJob;
+use Twstec\Kit\Foundation\Tests\Fixtures\Tracing\TracingProbe;
 
 // =============================================================================
 // AS GUARDAS DE PRODUÇÃO VALEM NUMA APLICAÇÃO LIMPA.
@@ -121,4 +127,45 @@ it('opt-out dos limitadores: não registra, mas avisa no log', function (): void
 
     expect(RateLimiter::limiter('sensitive'))->toBeNull()
         ->and(productionLogContents($file))->toContain('RATE_LIMIT_DEFINE_LIMITERS=false');
+});
+
+it('opt-out do rastreio (fila, cabeçalho e trilha de saída, poda): desliga, mas avisa no log', function (): void {
+    [$logging, $file] = productionLogCapture();
+
+    $this->bootProductionApp([
+        'config' => [
+            ...$logging,
+            'tracing.queue.enabled' => false,
+            'tracing.http.header.enabled' => false,
+            'tracing.http.trail.enabled' => false,
+        ],
+    ]);
+
+    expect(productionLogContents($file))->toContain('TRACING_QUEUE=false')
+        ->toContain('TRACING_HTTP_HEADER=false')
+        ->toContain('TRACING_HTTP_TRAIL=false');
+
+    [$logging, $file] = productionLogCapture();
+
+    $this->bootProductionApp([
+        'config' => [...$logging, 'tracing.http.trail.prune_schedule' => ''],
+    ]);
+
+    expect(productionLogContents($file))->toContain('outbound-http:prune');
+});
+
+it('o rastreio vem ligado numa aplicação limpa: cabeçalho no cliente Http e id restaurado no job', function (): void {
+    $this->bootProductionApp(['config' => ['queue.default' => 'sync']]);
+
+    Http::fake();
+    Http::get('https://api.example.test/v1/ping');
+
+    Http::assertSent(fn (HttpRequest $request): bool => Str::isUuid($request->header('X-Correlation-Id')[0] ?? null));
+
+    TracingProbe::reset();
+    dispatch(new ProbeJob('clean-app'));
+
+    expect(TracingProbe::of('clean-app')['id'])->toBe($request = CorrelationId::current())
+        ->and(Str::isUuid($request))->toBeTrue()
+        ->and(TracingProbe::of('clean-app')['origin'])->toBe('console');
 });

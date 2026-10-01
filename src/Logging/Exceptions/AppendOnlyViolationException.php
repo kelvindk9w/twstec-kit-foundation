@@ -15,7 +15,10 @@ use RuntimeException;
  *   e RequestLog::bindTenant());
  * - em audit_events, por model OU por query em massa — nenhuma alteração
  *   é permitida, e a única remoção é a poda por idade do comando
- *   `audit:prune` (AuditEvent::pruneOlderThan()).
+ *   `audit:prune` (AuditEvent::pruneOlderThan());
+ * - em outbound_http_logs (trilha das chamadas HTTP de saída), pelas mesmas
+ *   regras de audit_events — a única remoção é a poda do
+ *   `outbound-http:prune` (OutboundHttpLog::pruneOlderThan()).
  */
 final class AppendOnlyViolationException extends RuntimeException
 {
@@ -42,6 +45,19 @@ final class AppendOnlyViolationException extends RuntimeException
         return new self(
             'audit_events é append-only: DELETE é proibido. '
             .'A única remoção permitida é a poda por idade do comando audit:prune (AuditEvent::pruneOlderThan()).',
+        );
+    }
+
+    public static function outboundUpdateAttempted(): self
+    {
+        return new self('outbound_http_logs é append-only: UPDATE é proibido (trilha das chamadas HTTP de saída).');
+    }
+
+    public static function outboundDeleteAttempted(): self
+    {
+        return new self(
+            'outbound_http_logs é append-only: DELETE é proibido. '
+            .'A única remoção permitida é a poda por idade do comando outbound-http:prune (OutboundHttpLog::pruneOlderThan()).',
         );
     }
 }

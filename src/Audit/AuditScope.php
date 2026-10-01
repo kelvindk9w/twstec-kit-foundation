@@ -63,9 +63,11 @@ final class AuditScope
     }
 
     /**
-     * Escopo de um comando de console. Não há usuário da aplicação nem
-     * requisição: o "cliente" que agiu é o comando, registrado no lugar do
-     * User-Agent junto do usuário do sistema operacional que o rodou.
+     * Escopo de um comando de console (ou de um job da fila). Não há usuário
+     * da aplicação nem requisição: o "cliente" que agiu é o comando,
+     * registrado no lugar do User-Agent junto do usuário do sistema
+     * operacional que o rodou. A correlação é a que estiver valendo — a da
+     * requisição que despachou o job, a da tarefa agendada — ou nula.
      */
     public static function console(string $command, ?string $verb = null): self
     {
@@ -73,7 +75,9 @@ final class AuditScope
             context: AuditContext::Console,
             actorUuid: null,
             actorIsAdmin: null,
-            correlationId: null,
+            // Num comando avulso, nulo; num job ou numa tarefa agendada, o id
+            // da operação que o originou (ver Tracing\CorrelationContext).
+            correlationId: CorrelationId::current(),
             ip: null,
             userAgent: Str::limit('console: '.$command.' (os-user: '.self::osUser().')', self::USER_AGENT_MAX, ''),
             verb: $verb,
