@@ -48,11 +48,11 @@ it('detecta path traversal, inclusive URL-encoded', function (string $payload) {
 it('não acusa falsos positivos em texto legítimo', function (string $payload) {
     expect((new AttackDetector)->detectInString($payload))->toBeNull();
 })->with([
-    'texto comum' => ['Pagamento do pedido 1234 referente a agosto'],
-    'acentos e pontuação' => ['Atenção: cobrança não paga será cancelada!'],
+    'texto comum' => ['Entrega do pedido 1234 referente a agosto'],
+    'acentos e pontuação' => ['Atenção: inscrição não confirmada será cancelada!'],
     'números e símbolos' => ['R$ 1.499,90 (10% + R$ 1,49)'],
     'e-mail' => ['cliente@empresa.com.br'],
-    'url https' => ['https://empresa.com.br/webhooks/pix?id=123'],
+    'url https' => ['https://empresa.com.br/webhooks/pedidos?id=123'],
     'json serializado' => ['{"produto":"curso","valor":1990}'],
 ]);
 

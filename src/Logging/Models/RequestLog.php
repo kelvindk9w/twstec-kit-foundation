@@ -6,6 +6,7 @@ namespace Twstec\Kit\Foundation\Logging\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 use Twstec\Kit\Foundation\Identifiers\RoutesByUuid;
 use Twstec\Kit\Foundation\Logging\Enums\RequestLogStatus;
@@ -29,6 +30,25 @@ use Twstec\Kit\Foundation\Logging\Exceptions\AppendOnlyViolationException;
  * tenant_uuid é nullable por desenho: o log é gravado ANTES da
  * identificação do cliente. Log que permanece sem tenant = possível
  * ataque/tentativa de burla.
+ *
+ * Colunas (para a análise estática — Larastan/PHPStan — de quem usa o pacote):
+ *
+ * @property int $id
+ * @property string $uuid
+ * @property string $correlation_id
+ * @property string|null $client_correlation_id
+ * @property string|null $tenant_uuid
+ * @property string|null $ip
+ * @property string|null $user_agent
+ * @property string $method
+ * @property string $endpoint
+ * @property array<string, mixed>|null $payload
+ * @property RequestLogStatus $status
+ * @property string|null $attack_type
+ * @property int|null $http_status_response
+ * @property string|null $error_message
+ * @property int|null $duration_ms
+ * @property Carbon|null $created_at
  */
 class RequestLog extends Model
 {

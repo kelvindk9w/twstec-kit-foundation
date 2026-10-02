@@ -19,7 +19,7 @@ function endpoint(): OutboundEndpoint
 it('normaliza os segmentos que parecem valor e mantém os nomes de rota', function (string $url, string $path): void {
     expect(endpoint()->path(new Uri($url)))->toBe($path);
 })->with([
-    'número' => ['https://api.test/v1/charges/123/refund', '/v1/charges/{n}/refund'],
+    'número' => ['https://api.test/v1/orders/123/cancel', '/v1/orders/{n}/cancel'],
     'uuid' => ['https://api.test/v1/orders/0192c3a4-5b6c-7d8e-9f01-23456789abcd', '/v1/orders/{uuid}'],
     'cpf pontuado' => ['https://api.test/clientes/123.456.789-09', '/clientes/{n}'],
     'cnpj' => ['https://api.test/empresas/12.345.678%2F0001-90/notas', '/empresas/{n}/notas'],
@@ -27,7 +27,7 @@ it('normaliza os segmentos que parecem valor e mantém os nomes de rota', functi
     'e-mail' => ['https://api.test/users/maria%40example.com/keys', '/users/{email}/keys'],
     'token com dígitos' => ['https://api.test/webhooks/whsec_AbCdEf1GhIjK2L', '/webhooks/{token}'],
     'token só de letras longo' => ['https://api.test/k/AbCdEfGhIjKlMnOpQrStUvWxYz', '/k/{token}'],
-    'nomes longos de rota ficam' => ['https://api.test/v1/payment-method-configurations', '/v1/payment-method-configurations'],
+    'nomes longos de rota ficam' => ['https://api.test/v1/shipping-method-configurations', '/v1/shipping-method-configurations'],
     'raiz' => ['https://api.test', '/'],
     'barras repetidas' => ['https://api.test//v1///status', '/v1/status'],
 ]);

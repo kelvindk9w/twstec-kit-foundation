@@ -201,10 +201,10 @@ it('fila sync: o job roda dentro da requisição com o id dela, e a requisição
 });
 
 it('chamada Http:: de dentro do job leva o cabeçalho com o id da requisição de origem', function (): void {
-    Http::fake(['payments.example.test/*' => Http::response(['ok' => true])]);
+    Http::fake(['orders.example.test/*' => Http::response(['ok' => true])]);
 
     Route::get('/tracing/job-http', function () {
-        dispatch(new ProbeJob('job-http', callUrl: 'https://payments.example.test/v1/charges'));
+        dispatch(new ProbeJob('job-http', callUrl: 'https://orders.example.test/v1/orders'));
 
         return response()->noContent();
     });

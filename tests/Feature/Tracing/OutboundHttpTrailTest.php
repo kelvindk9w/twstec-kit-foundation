@@ -58,7 +58,7 @@ beforeEach(function (): void {
     });
 
     Http::fake([
-        'payments.example.test/*' => Http::response([
+        'orders.example.test/*' => Http::response([
             'id' => 'ch_1',
             'status' => 'paid',
             'customer' => ['document' => TRACING_CPF, 'email' => TRACING_EMAIL],
@@ -67,11 +67,11 @@ beforeEach(function (): void {
         ], 201),
     ]);
 
-    Route::post('/tracing/charge', function () {
+    Route::post('/tracing/order', function () {
         Http::withToken(TRACING_SECRET_TOKEN)
             ->withBasicAuth('merchant', TRACING_PASSWORD)
             ->withHeaders(['X-Api-Key' => TRACING_SECRET_TOKEN])
-            ->post('https://payments.example.test/v1/customers/'.TRACING_CPF.'/charges?access_token='.TRACING_SECRET_TOKEN.'&page=2', [
+            ->post('https://orders.example.test/v1/customers/'.TRACING_CPF.'/orders?access_token='.TRACING_SECRET_TOKEN.'&page=2', [
                 'amount' => 1500,
                 'password' => TRACING_PASSWORD,
                 'token' => TRACING_SECRET_TOKEN,
@@ -120,7 +120,7 @@ function expectNoSecretsIn(string $dump): void
 }
 
 it('a chamada sai com o X-Correlation-Id da requisição e grava a linha da trilha', function (): void {
-    $requestId = $this->post('/tracing/charge')->assertNoContent()->headers->get('X-Correlation-Id');
+    $requestId = $this->post('/tracing/order')->assertNoContent()->headers->get('X-Correlation-Id');
 
     Http::assertSent(fn (HttpRequest $request): bool => $request->header('X-Correlation-Id') === [$requestId]);
 
@@ -129,8 +129,8 @@ it('a chamada sai com o X-Correlation-Id da requisição e grava a linha da tril
     expect($log->correlation_id)->toBe($requestId)
         ->and($log->correlation_origin)->toBe('http')
         ->and($log->method)->toBe('POST')
-        ->and($log->host)->toBe('payments.example.test')
-        ->and($log->path)->toBe('/v1/customers/{n}/charges')
+        ->and($log->host)->toBe('orders.example.test')
+        ->and($log->path)->toBe('/v1/customers/{n}/orders')
         ->and($log->query_keys)->toBe(['access_token', 'page'])
         ->and($log->http_status)->toBe(201)
         ->and($log->attempt)->toBe(1)
@@ -144,11 +144,11 @@ it('a chamada sai com o X-Correlation-Id da requisição e grava a linha da tril
     // A segunda camada (arquivo) tem a mesma linha, sem corpo.
     $line = collect($GLOBALS['outboundLogLines'])->firstWhere('message', 'http.outbound');
     expect($line['context']['correlation_id'] ?? null)->toBe($requestId)
-        ->and($line['context']['path'] ?? null)->toBe('/v1/customers/{n}/charges');
+        ->and($line['context']['path'] ?? null)->toBe('/v1/customers/{n}/orders');
 });
 
 it('a trilha NÃO contém token, senha, cabeçalho de autenticação, query, CPF, cartão nem e-mail', function (): void {
-    $this->post('/tracing/charge')->assertNoContent();
+    $this->post('/tracing/order')->assertNoContent();
 
     expect(OutboundHttpLog::query()->count())->toBe(1);
 
@@ -156,7 +156,7 @@ it('a trilha NÃO contém token, senha, cabeçalho de autenticação, query, CPF
 });
 
 it('com withBodyInTrail() o corpo entra REDIGIDO (enviado e recebido)', function (): void {
-    Http::withBodyInTrail()->withToken(TRACING_SECRET_TOKEN)->post('https://payments.example.test/v1/charges', [
+    Http::withBodyInTrail()->withToken(TRACING_SECRET_TOKEN)->post('https://orders.example.test/v1/orders', [
         'amount' => 1500,
         'password' => TRACING_PASSWORD,
         'token' => TRACING_SECRET_TOKEN,
@@ -183,13 +183,13 @@ it('com withBodyInTrail() o corpo entra REDIGIDO (enviado e recebido)', function
 });
 
 it('formulário também é redigido; corpo que não é JSON nem formulário entra só como tipo e tamanho', function (): void {
-    Http::withBodyInTrail()->asForm()->post('https://payments.example.test/v1/tokens', [
+    Http::withBodyInTrail()->asForm()->post('https://orders.example.test/v1/tokens', [
         'client_secret' => TRACING_SECRET_TOKEN,
         'cpf' => TRACING_CPF,
     ]);
 
     Http::withBodyInTrail()->withBody('cartão '.TRACING_CARD.' senha '.TRACING_PASSWORD, 'text/plain')
-        ->post('https://payments.example.test/v1/raw');
+        ->post('https://orders.example.test/v1/raw');
 
     [$form, $raw] = OutboundHttpLog::query()->orderBy('id')->get()->all();
 
@@ -246,7 +246,7 @@ it('falha de conexão pelo caminho real do Guzzle (promessa rejeitada) também v
 it('FAIL-OPEN só da trilha: sem a tabela, a chamada responde normalmente e a falha vai para o arquivo', function (): void {
     Schema::drop('outbound_http_logs');
 
-    $response = Http::post('https://payments.example.test/v1/charges', ['token' => TRACING_SECRET_TOKEN]);
+    $response = Http::post('https://orders.example.test/v1/orders', ['token' => TRACING_SECRET_TOKEN]);
 
     expect($response->status())->toBe(201)
         ->and($response->json('status'))->toBe('paid');
@@ -255,13 +255,13 @@ it('FAIL-OPEN só da trilha: sem a tabela, a chamada responde normalmente e a fa
 
     expect($failure)->not->toBeNull()
         ->and($failure['level'])->toBe('critical')
-        ->and($failure['context']['host'] ?? null)->toBe('payments.example.test');
+        ->and($failure['context']['host'] ?? null)->toBe('orders.example.test');
 
     expectNoSecretsIn(json_encode($GLOBALS['outboundLogLines']));
 });
 
 it('outbound_http_logs é só-acréscimo: UPDATE e DELETE recusados (instância e em massa)', function (): void {
-    Http::get('https://payments.example.test/v1/charges/1');
+    Http::get('https://orders.example.test/v1/orders/1');
 
     $log = OutboundHttpLog::query()->sole();
 
@@ -284,7 +284,7 @@ it('outbound_http_logs é só-acréscimo: UPDATE e DELETE recusados (instância 
 });
 
 it('no PostgreSQL, o gatilho recusa UPDATE/DELETE/TRUNCATE por SQL cru — fora da poda', function (): void {
-    Http::get('https://payments.example.test/v1/charges/1');
+    Http::get('https://orders.example.test/v1/orders/1');
 
     expect(OutboundHttpLogTrigger::installed())->toBeTrue();
 
@@ -307,9 +307,9 @@ it('cabeçalho: não vai para destino em except_hosts, nem com withoutCorrelatio
     Http::fake();
 
     Http::get('https://api.partner.test/v1/a');
-    Http::withoutCorrelationHeader()->get('https://payments.example.test/v1/b');
-    Http::withHeaders(['X-Correlation-Id' => 'do-chamador'])->get('https://payments.example.test/v1/c');
-    Http::get('https://payments.example.test/v1/d');
+    Http::withoutCorrelationHeader()->get('https://orders.example.test/v1/b');
+    Http::withHeaders(['X-Correlation-Id' => 'do-chamador'])->get('https://orders.example.test/v1/c');
+    Http::get('https://orders.example.test/v1/d');
 
     $headers = collect(Http::recorded())->mapWithKeys(fn (array $pair) => [basename($pair[0]->url()) => $pair[0]->header('X-Correlation-Id')]);
 
@@ -326,8 +326,8 @@ it('fora da requisição (console), a chamada ganha um id de origem console, o m
     app()->forgetScopedInstances();
     Http::fake();
 
-    Http::get('https://payments.example.test/v1/a');
-    Http::get('https://payments.example.test/v1/b');
+    Http::get('https://orders.example.test/v1/a');
+    Http::get('https://orders.example.test/v1/b');
 
     $logs = OutboundHttpLog::query()->orderBy('id')->get();
 
@@ -344,11 +344,11 @@ it('nome do cabeçalho configurável; trilha fora para destino em except_hosts',
     Http::fake();
 
     Http::get('https://metrics.example.test/ping');
-    Http::get('https://payments.example.test/v1/a');
+    Http::get('https://orders.example.test/v1/a');
 
     Http::assertSent(fn (HttpRequest $request): bool => $request->hasHeader('X-Request-Trace') && ! $request->hasHeader('X-Correlation-Id'));
 
-    expect(OutboundHttpLog::query()->pluck('host')->all())->toBe(['payments.example.test']);
+    expect(OutboundHttpLog::query()->pluck('host')->all())->toBe(['orders.example.test']);
 });
 
 it('desligados por config, nem cabeçalho nem trilha', function (): void {
@@ -359,7 +359,7 @@ it('desligados por config, nem cabeçalho nem trilha', function (): void {
     $this->artisan('migrate')->assertSuccessful();
     Http::fake();
 
-    Http::get('https://payments.example.test/v1/a');
+    Http::get('https://orders.example.test/v1/a');
 
     Http::assertSent(fn (HttpRequest $request): bool => ! $request->hasHeader('X-Correlation-Id'));
     expect(OutboundHttpLog::query()->count())->toBe(0);
@@ -370,13 +370,13 @@ it('grava a conta quando um pacote informa qual é (e ignora o que não é uuid)
 
     try {
         OutboundHttpTrail::resolveTenantUsing(fn (): string => $tenant);
-        Http::get('https://payments.example.test/v1/a');
+        Http::get('https://orders.example.test/v1/a');
 
         OutboundHttpTrail::resolveTenantUsing(fn (): string => "não-é-uuid'; DROP TABLE x;--");
-        Http::get('https://payments.example.test/v1/b');
+        Http::get('https://orders.example.test/v1/b');
 
         OutboundHttpTrail::resolveTenantUsing(fn () => throw new RuntimeException('sem conta'));
-        Http::get('https://payments.example.test/v1/c');
+        Http::get('https://orders.example.test/v1/c');
     } finally {
         OutboundHttpTrail::resolveTenantUsing(null);
     }
@@ -387,7 +387,7 @@ it('grava a conta quando um pacote informa qual é (e ignora o que não é uuid)
 it('a linha da trilha não vira evento de auditoria (é efeito, não ação)', function (): void {
     $trail = app(AuditTrail::class);
 
-    $trail->within(AuditScope::console('teste'), fn () => Http::get('https://payments.example.test/v1/a'));
+    $trail->within(AuditScope::console('teste'), fn () => Http::get('https://orders.example.test/v1/a'));
 
     expect(OutboundHttpLog::query()->count())->toBe(1)
         ->and(AuditEvent::query()->count())->toBe(0);
@@ -398,7 +398,7 @@ it('a linha da trilha não vira evento de auditoria (é efeito, não ação)', f
 // -----------------------------------------------------------------------------
 
 it('outbound-http:prune apaga só o que passou da retenção e deixa rastro na auditoria', function (): void {
-    Http::get('https://payments.example.test/v1/old');
+    Http::get('https://orders.example.test/v1/old');
     DB::table('outbound_http_logs')->insert([
         ...collect((array) DB::table('outbound_http_logs')->first())->except(['id', 'uuid', 'created_at'])->all(),
         'uuid' => (string) Str::uuid7(),
@@ -442,7 +442,7 @@ it('o contexto do log de quem chama não muda por causa da chamada', function ()
     $id = (string) Str::uuid7();
     app(CorrelationContext::class)->enterRequest($id);
 
-    Http::get('https://payments.example.test/v1/a');
+    Http::get('https://orders.example.test/v1/a');
 
     expect(CorrelationId::current())->toBe($id);
 });
@@ -450,7 +450,7 @@ it('o contexto do log de quem chama não muda por causa da chamada', function ()
 it('resposta 4xx/5xx também é gravada, com status', function (): void {
     Http::fake(['validation.example.test/*' => Http::response(['errors' => ['amount' => 'inválido']], 422)]);
 
-    Http::post('https://validation.example.test/v1/charges');
+    Http::post('https://validation.example.test/v1/orders');
 
     expect(OutboundHttpLog::query()->sole()->http_status)->toBe(422);
 });

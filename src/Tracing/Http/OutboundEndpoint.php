@@ -23,12 +23,12 @@ use Twstec\Kit\Foundation\Logging\Redactor;
  *   qualquer segmento com 6+ dígitos → `{n}`, segmento longo com letras e
  *   dígitos (token, hash, chave) e segmento de 24+ caracteres que não é
  *   palavra minúscula → `{token}`. O que sobra (nomes de rota
- *   como `v1`, `charges`, `refund`) fica, cortado em 64 caracteres e passado
+ *   como `v1`, `orders`, `cancel`) fica, cortado em 64 caracteres e passado
  *   pelas máscaras do Redactor;
  * - host: minúsculo, com a porta só quando não é a padrão do esquema.
  *
  * Normalizar também é o que torna a trilha consultável: todas as chamadas a
- * `/v1/charges/{token}/refund` caem na mesma rota, seja qual for a cobrança.
+ * `/v1/orders/{token}/cancel` caem na mesma rota, seja qual for o pedido.
  */
 final class OutboundEndpoint
 {
@@ -40,7 +40,7 @@ final class OutboundEndpoint
 
     /**
      * Tamanho a partir do qual um segmento que NÃO é palavra minúscula
-     * (`payment-methods`, `refund_requests`) é tratado como valor opaco —
+     * (`shipping-methods`, `return_requests`) é tratado como valor opaco —
      * token só de letras, base64, chave com maiúsculas.
      */
     private const OPAQUE_MIN_LENGTH = 24;
