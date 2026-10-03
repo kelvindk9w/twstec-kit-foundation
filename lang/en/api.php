@@ -21,7 +21,16 @@ return [
         'validation_failed' => 'The submitted data is invalid.',
         'too_many_requests' => 'Too many requests. Try again shortly.',
         'service_unavailable' => 'Service temporarily unavailable.',
+        'idempotency_key_missing' => 'This operation requires the Idempotency-Key header.',
+        'idempotency_key_invalid' => 'Invalid Idempotency-Key: use :min to :max characters among letters, digits and - _ . : ~ + / =.',
+        'idempotency_key_reused' => 'This Idempotency-Key was already used with a different request. Use a new key for a new operation.',
+        'idempotency_request_in_progress' => 'A request with this Idempotency-Key is being processed or ended without a recorded result. Try again shortly; if it persists, check the state of the resource before repeating the operation with a new key.',
         'server_error' => 'Internal error. Provide the correlation_id to support.',
+    ],
+
+    'idempotency' => [
+        'withheld' => 'This request was already processed. The original response body is not stored for this operation and is not shown again.',
+        'pruned' => ':count expired idempotency key(s) removed.',
     ],
 
 ];

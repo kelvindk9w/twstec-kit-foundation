@@ -23,6 +23,7 @@ nem interface — e um teste de arquitetura na suíte do pacote garante isso.
 | `Http` | Proxies confiáveis e hosts confiáveis (lidos de configuração), redirecionamento seguro, envelope de erro da API, recursos base de API e o health check |
 | `Logging` | Trilha de requisições (`request_logs`, só-acréscimo), correlation id (e o contexto que diz qual vale agora), redação LGPD de payload, mascaramento de cartão nos logs, amostragem de tráfego de varredura |
 | `Tracing` | O correlation id seguindo a operação: no payload de todo job da fila (restaurado no worker), em cada tarefa do agendador e no cabeçalho de toda chamada HTTP de saída; trilha redigida das chamadas de saída (`outbound_http_logs`, só-acréscimo, com gatilho no banco) e o comando `outbound-http:prune` — ver [docs/logs-lgpd.md](https://github.com/kelvindk9w/tws-laravel-starter-kit/blob/desenvolvimento/docs/logs-lgpd.md#rastreio-de-ponta-a-ponta-fila-e-http-de-saída) |
+| `Idempotency` | `Idempotency-Key` nas escritas da API, por rota (alias `idempotent`): a corrida decidida pela unicidade no banco (`idempotency_keys`), replay da resposta original, recusa de chave reusada com outro corpo e de chave em processamento, escopo por conta + credencial (contrato `IdempotencyScopeResolver`; sem ele, a pessoa autenticada; sem ninguém, recusa), só hashes da chave e do pedido, resposta cifrada, modo sem corpo para rotas de segredo exibido uma vez e o comando `idempotency:prune` — ver [docs/api.md](https://github.com/kelvindk9w/tws-laravel-starter-kit/blob/desenvolvimento/docs/api.md#idempotência-idempotency-key) |
 | `Audit` | Trilha de auditoria de ações (`audit_events`, só-acréscimo, com gatilho no banco), escopo de auditoria e o comando `audit:prune` |
 | `Mail` | Base dos e-mails (`KitMailable`, `KitMailMessage`), o layout e os componentes `<x-email::…>`, texto puro automático, galeria `/mail-preview` (registro e controller) e a recusa dos transportes que não entregam em produção |
 | `Settings` | Configurações editáveis no banco (`settings`) por cima do `.env`, com lista fechada de chaves, e o helper `setting()` |
@@ -68,7 +69,7 @@ Os providers são descobertos automaticamente (`extra.laravel.providers`):
 configurações editáveis. Em seguida:
 
 ```bash
-php artisan vendor:publish --tag=foundation-config   # opcional: security, audit, settings, platform, tracing
+php artisan vendor:publish --tag=foundation-config   # opcional: security, audit, settings, platform, tracing, idempotency
 php artisan migrate
 ```
 
@@ -80,14 +81,16 @@ php artisan migrate
   lista (o do pacote é uma subclasse dele que lê a configuração). O porquê de
   cada posição está no docblock de `FoundationServiceProvider::GLOBAL_MIDDLEWARE`.
 - **Aliases de middleware:** `security.validation`, `security.headers`,
-  `request.logging` (um alias de mesmo nome declarado pelo aplicativo
-  prevalece).
+  `request.logging` e `idempotent` (um alias de mesmo nome declarado pelo
+  aplicativo prevalece). O `idempotent` entra na lista de prioridade do kernel
+  depois do `Authorize`: roda depois da autenticação, do limite e da
+  autorização em qualquer ordem declarada na rota.
 - **Configuração padrão** (`mergeConfigFrom`) de `security`, `audit`,
-  `settings`, `platform` e `tracing`. O aplicativo pode publicar a própria cópia
+  `settings`, `platform`, `tracing` e `idempotency`. O aplicativo pode publicar a própria cópia
   (`--tag=foundation-config`); as chaves de primeiro nível dela prevalecem —
   é o arranjo de todo pacote Laravel. O starter mantém as quatro publicadas.
 - **Migrations** de `request_logs`, `settings`, `audit_events` e (2.x)
-  `outbound_http_logs`, rodadas direto do pacote, com os **mesmos nomes de
+  `outbound_http_logs` e `idempotency_keys`, rodadas direto do pacote, com os **mesmos nomes de
   arquivo** que tinham no aplicativo na 1.x: um banco que já as rodou não vê nada pendente, e um banco novo as roda
   na mesma ordem. Não publique essas migrations.
 - **Views do e-mail** com os nomes de sempre: `<x-email::layouts.kit>`,
@@ -135,7 +138,11 @@ php artisan migrate
   `CorrelationId::current()`; por chamada: `Http::withoutCorrelationHeader()`
   e `Http::withBodyInTrail()`.
 - **Singleton da plataforma** (`platform()`) e o helper `setting()`.
-- **Comandos** `audit:prune` e `outbound-http:prune`.
+- **Idempotência** (`config/idempotency.php`): o middleware `idempotent` só
+  vale nas rotas que o declaram; a poda `idempotency:prune` das chaves
+  vencidas entra no agendador sozinha, de hora em hora
+  (`IDEMPOTENCY_PRUNE_SCHEDULE`; vazio desliga, com aviso no log).
+- **Comandos** `audit:prune`, `outbound-http:prune` e `idempotency:prune`.
 
 ## O que o aplicativo liga
 

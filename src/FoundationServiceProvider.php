@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Twstec\Kit\Foundation;
 
+use Illuminate\Auth\Middleware\Authorize;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Http\Kernel as HttpKernelContract;
@@ -22,6 +23,8 @@ use Spatie\Backup\Commands\BackupCommand;
 use Twstec\Kit\Foundation\Backup\Console\GuardedBackupCommand;
 use Twstec\Kit\Foundation\Http\Middleware\TrustHosts;
 use Twstec\Kit\Foundation\Http\Middleware\TrustProxies;
+use Twstec\Kit\Foundation\Idempotency\Console\PruneIdempotencyKeys;
+use Twstec\Kit\Foundation\Idempotency\Middleware\HandleIdempotencyKey;
 use Twstec\Kit\Foundation\Localization\PackageTranslations;
 use Twstec\Kit\Foundation\Logging\CorrelationContext;
 use Twstec\Kit\Foundation\Logging\Middleware\RequestLogging;
@@ -117,6 +120,9 @@ final class FoundationServiceProvider extends ServiceProvider
         'security.validation' => SecurityValidation::class,
         'security.headers' => SecurityHeaders::class,
         'request.logging' => RequestLogging::class,
+        // Idempotency-Key nas escritas da API, por rota (ver
+        // Idempotency\Middleware\HandleIdempotencyKey e docs/api.md).
+        HandleIdempotencyKey::ALIAS => HandleIdempotencyKey::class,
     ];
 
     /**
@@ -124,7 +130,7 @@ final class FoundationServiceProvider extends ServiceProvider
      * aplicação pode publicar a própria cópia (`vendor:publish --tag=
      * foundation-config`); as chaves de primeiro nível dela prevalecem.
      */
-    private const CONFIG_FILES = ['security', 'audit', 'settings', 'platform', 'tracing'];
+    private const CONFIG_FILES = ['security', 'audit', 'settings', 'platform', 'tracing', 'idempotency'];
 
     public function register(): void
     {
@@ -160,6 +166,7 @@ final class FoundationServiceProvider extends ServiceProvider
         $this->applyProductionGuards();
         $this->registerRateLimiters();
         $this->registerTracing();
+        $this->registerIdempotencyPruneSchedule();
 
         // As migrations rodam direto daqui, com os MESMOS nomes de arquivo
         // que tinham quando moravam no aplicativo: um banco que já as rodou
@@ -170,7 +177,7 @@ final class FoundationServiceProvider extends ServiceProvider
         $this->registerModuleDirective();
 
         if ($this->app->runningInConsole()) {
-            $this->commands([PruneOutboundHttpLogs::class]);
+            $this->commands([PruneOutboundHttpLogs::class, PruneIdempotencyKeys::class]);
 
             $this->publishes(
                 array_combine(
@@ -316,6 +323,31 @@ final class FoundationServiceProvider extends ServiceProvider
     }
 
     /**
+     * A poda de hora em hora das chaves de idempotência vencidas entra no
+     * agendador da aplicação sozinha (como a da trilha de saída). Cron vazio =
+     * desligada, com aviso no log a cada boot (o comando continua
+     * disponível). A chave vencida já não vale mesmo sem a poda; a poda só
+     * tira do banco as respostas cifradas que não servem mais.
+     */
+    private function registerIdempotencyPruneSchedule(): void
+    {
+        $cron = trim((string) config('idempotency.prune_schedule', ''));
+
+        if ($cron === '' || in_array(strtolower($cron), ['false', 'off', '0'], true)) {
+            Log::warning('idempotency.prune_schedule vazio: a poda agendada das chaves de idempotência (idempotency:prune) está DESLIGADA. A tabela idempotency_keys — com as respostas cifradas guardadas para o replay — só encolhe rodando o comando à mão.');
+
+            return;
+        }
+
+        $this->callAfterResolving(Schedule::class, static function (Schedule $schedule) use ($cron): void {
+            $schedule->command('idempotency:prune')
+                ->cron($cron)
+                ->withoutOverlapping()
+                ->onOneServer();
+        });
+    }
+
+    /**
      * Traduções do pacote, sem namespace (`__('security.blocked')`,
      * `__('api.errors.…')`, `__('mail.footer.…')`, `__('audit.…')`).
      *
@@ -367,6 +399,14 @@ final class FoundationServiceProvider extends ServiceProvider
 
             $kernel->setGlobalMiddleware(array_values(array_unique([...self::GLOBAL_MIDDLEWARE, ...$rest], SORT_REGULAR)));
             $kernel->setMiddlewareAliases([...self::MIDDLEWARE_ALIASES, ...$kernel->getMiddlewareAliases()]);
+
+            // A idempotência roda DEPOIS da autenticação, do limite, dos
+            // bindings e da autorização (`can:`), qualquer que seja a ordem
+            // em que a rota a declarou: um replay nunca dispensa nenhuma
+            // delas. O Authorize é o último da lista de prioridade do
+            // framework; a autenticação da API do módulo de contas entra
+            // antes do limite (AccountsServiceProvider).
+            $kernel->addToMiddlewarePriorityAfter(Authorize::class, HandleIdempotencyKey::class);
         });
     }
 

@@ -50,6 +50,8 @@ it('roda as migrations do pacote com os mesmos nomes de arquivo da 1.x', functio
         '2026_09_27_000001_add_tenant_uuid_to_audit_events_table',
         // 2.x: trilha das chamadas HTTP de saída (sem equivalente na 1.x).
         '2026_10_01_000001_create_outbound_http_logs_table',
+        // 2.x: chaves de idempotência das escritas da API.
+        '2026_10_02_000001_create_idempotency_keys_table',
     ]);
 
     expect(app('migrator')->paths())->toContain(foundationPackagePath('database/migrations'));

@@ -48,8 +48,8 @@ it('cobre exatamente os módulos do pacote', function (): void {
     $modules = [];
 
     foreach ((new Finder)->directories()->in(dirname(__DIR__, 2).'/src')->depth(0) as $directory) {
-        // Compat não é módulo; Tracing nasceu na 2.x (não tem nome antigo).
-        if (! in_array($directory->getFilename(), ['Compat', 'Tracing'], true)) {
+        // Compat não é módulo; Tracing e Idempotency nasceram na 2.x (não têm nome antigo).
+        if (! in_array($directory->getFilename(), ['Compat', 'Tracing', 'Idempotency'], true)) {
             $modules[] = $directory->getFilename();
         }
     }

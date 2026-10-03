@@ -21,7 +21,16 @@ return [
         'validation_failed' => 'Los datos enviados son inválidos.',
         'too_many_requests' => 'Demasiadas peticiones. Inténtelo de nuevo en unos instantes.',
         'service_unavailable' => 'Servicio temporalmente no disponible.',
+        'idempotency_key_missing' => 'Esta operación requiere el encabezado Idempotency-Key.',
+        'idempotency_key_invalid' => 'Idempotency-Key inválida: use de :min a :max caracteres entre letras, dígitos y - _ . : ~ + / =.',
+        'idempotency_key_reused' => 'Esta Idempotency-Key ya se usó con una solicitud diferente. Use una clave nueva para una operación nueva.',
+        'idempotency_request_in_progress' => 'Una solicitud con esta Idempotency-Key se está procesando o terminó sin un resultado registrado. Inténtelo de nuevo en unos instantes; si persiste, consulte el estado del recurso antes de repetir la operación con una clave nueva.',
         'server_error' => 'Error interno. Informe el correlation_id al soporte.',
+    ],
+
+    'idempotency' => [
+        'withheld' => 'Esta solicitud ya fue procesada. El cuerpo de la respuesta original no se guarda en esta operación y no se muestra de nuevo.',
+        'pruned' => ':count clave(s) de idempotencia vencida(s) eliminada(s).',
     ],
 
 ];

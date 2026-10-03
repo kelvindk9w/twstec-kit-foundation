@@ -16,6 +16,7 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use Throwable;
+use Twstec\Kit\Foundation\Http\Exceptions\Contracts\ProvidesApiErrorCode;
 use Twstec\Kit\Foundation\Logging\CorrelationId;
 
 /**
@@ -27,6 +28,9 @@ use Twstec\Kit\Foundation\Logging\CorrelationId;
  *     {"error": {"code": "…", "message": "…", "correlation_id": "…"}}
  *
  * Em 422, o envelope ganha `errors` (mapa campo → lista de mensagens).
+ *
+ * O `code` é o do status (CODES), salvo quando a exceção traz um próprio
+ * (Contracts\ProvidesApiErrorCode — ex.: `idempotency_key_reused`).
  *
  * Regras inegociáveis:
  * - NUNCA stack trace, classe interna, arquivo ou linha do servidor —
@@ -69,7 +73,12 @@ final class ApiErrorRenderer
         }
 
         $status = $this->status($e);
-        $code = self::CODES[$status] ?? 'server_error';
+
+        // Código próprio da exceção (ex.: os da idempotência), quando ela
+        // traz um; senão, o código do status.
+        $code = $e instanceof ProvidesApiErrorCode && $status < 500
+            ? $e->apiErrorCode()
+            : (self::CODES[$status] ?? 'server_error');
 
         $payload = [
             'code' => $code,
@@ -139,6 +148,12 @@ final class ApiErrorRenderer
 
         if ($e instanceof ValidationException) {
             return __('api.errors.validation_failed');
+        }
+
+        // A exceção com código próprio já traz a mensagem traduzida (com os
+        // parâmetros dela); sem mensagem, a do código.
+        if ($e instanceof ProvidesApiErrorCode) {
+            return $own !== '' ? $own : __("api.errors.{$code}");
         }
 
         // 429 sai sempre com a mensagem traduzida da API: o ThrottleRequests
