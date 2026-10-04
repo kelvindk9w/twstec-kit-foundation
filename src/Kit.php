@@ -13,7 +13,8 @@ use InvalidArgumentException;
  *
  * O kit é feito de pacotes: `foundation` e `auth` vêm sempre; `accounts`
  * (contas, projetos, chaves e a API), `uploads` (upload seguro e foto de
- * perfil) e `admin` (o painel /admin) são OPCIONAIS — quem cria o projeto
+ * perfil), `admin` (o painel /admin) e `webhooks` (webhooks de saída) são
+ * OPCIONAIS — quem cria o projeto
  * escolhe (`php artisan tws:install`) e quem já tem um aplicativo instala só
  * os que quiser. Todo lugar que mostra, registra ou chama algo de um módulo
  * opcional pergunta AQUI (`Kit::has('accounts')`), nunca por conta própria:
@@ -47,6 +48,7 @@ final class Kit
         'accounts' => ['package' => 'twstec/kit-accounts', 'provider' => 'Twstec\\Kit\\Accounts\\AccountsServiceProvider'],
         'uploads' => ['package' => 'twstec/kit-uploads', 'provider' => 'Twstec\\Kit\\Uploads\\UploadsServiceProvider'],
         'admin' => ['package' => 'twstec/kit-admin', 'provider' => 'Twstec\\Kit\\Admin\\AdminServiceProvider'],
+        'webhooks' => ['package' => 'twstec/kit-webhooks', 'provider' => 'Twstec\\Kit\\Webhooks\\WebhooksServiceProvider'],
     ];
 
     /**
@@ -61,12 +63,13 @@ final class Kit
      *
      * @var list<string>
      */
-    public const OPTIONAL = ['accounts', 'uploads', 'admin'];
+    public const OPTIONAL = ['accounts', 'uploads', 'admin', 'webhooks'];
 
     /**
      * Módulo opcional => os opcionais de que ele precisa. O upload pertence a
      * uma CONTA (dono, isolamento, exclusão junto com a conta), por isso
-     * `uploads` exige `accounts`. O `admin` se adapta ao que estiver
+     * `uploads` exige `accounts`; o endpoint de webhook também é da conta,
+     * por isso `webhooks` exige `accounts`. O `admin` se adapta ao que estiver
      * instalado: sem `accounts`, não mostra contas, chaves nem projetos; sem
      * `uploads`, não mostra uploads nem o campo de foto.
      *
@@ -76,6 +79,7 @@ final class Kit
         'accounts' => [],
         'uploads' => ['accounts'],
         'admin' => [],
+        'webhooks' => ['accounts'],
     ];
 
     /**

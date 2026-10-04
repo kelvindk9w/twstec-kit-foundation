@@ -19,15 +19,18 @@ it('reconhece o próprio foundation e nenhum módulo que não foi instalado', fu
         ->and(Kit::has('accounts'))->toBeFalse()
         ->and(Kit::has('uploads'))->toBeFalse()
         ->and(Kit::has('admin'))->toBeFalse()
+        ->and(Kit::has('webhooks'))->toBeFalse()
         ->and(Kit::installed())->toBe(['foundation'])
         ->and(Kit::installedOptional())->toBe([]);
 });
 
-it('conhece os cinco módulos: dois obrigatórios e três opcionais, cada um com o pacote dele', function (): void {
-    expect(array_keys(Kit::MODULES))->toBe(['foundation', 'auth', 'accounts', 'uploads', 'admin'])
+it('conhece os seis módulos: dois obrigatórios e quatro opcionais, cada um com o pacote dele', function (): void {
+    expect(array_keys(Kit::MODULES))->toBe(['foundation', 'auth', 'accounts', 'uploads', 'admin', 'webhooks'])
         ->and(Kit::REQUIRED)->toBe(['foundation', 'auth'])
-        ->and(Kit::OPTIONAL)->toBe(['accounts', 'uploads', 'admin'])
-        ->and(Kit::package('uploads'))->toBe('twstec/kit-uploads');
+        ->and(Kit::OPTIONAL)->toBe(['accounts', 'uploads', 'admin', 'webhooks'])
+        ->and(Kit::package('uploads'))->toBe('twstec/kit-uploads')
+        ->and(Kit::package('webhooks'))->toBe('twstec/kit-webhooks')
+        ->and(Kit::MODULES['webhooks']['provider'])->toBe('Twstec\\Kit\\Webhooks\\WebhooksServiceProvider');
 });
 
 it('recusa módulo desconhecido em vez de responder "não instalado"', function (): void {
@@ -35,8 +38,10 @@ it('recusa módulo desconhecido em vez de responder "não instalado"', function 
     expect(fn () => Kit::has('upload'))->toThrow(InvalidArgumentException::class);
 });
 
-it('uploads exige accounts; accounts e admin não exigem outro opcional', function (): void {
+it('uploads e webhooks exigem accounts; accounts e admin não exigem outro opcional', function (): void {
     expect(Kit::missingDependencies(['uploads']))->toBe(['uploads' => ['accounts']])
+        ->and(Kit::missingDependencies(['webhooks', 'admin']))->toBe(['webhooks' => ['accounts']])
+        ->and(Kit::missingDependencies(['accounts', 'webhooks']))->toBe([])
         ->and(Kit::missingDependencies(['accounts', 'uploads']))->toBe([])
         ->and(Kit::missingDependencies(['admin']))->toBe([])
         ->and(Kit::missingDependencies([]))->toBe([]);
