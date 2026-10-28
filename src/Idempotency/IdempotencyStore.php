@@ -26,8 +26,11 @@ use RuntimeException;
  * RETOMAR uma linha que venceu (`expires_at` passou) ou cuja execução foi
  * abandonada (em processamento além de `locked_until` — só quando a rota tem
  * prazo de retomada; sem prazo, `locked_until` é nulo e a linha espera
- * vencer) é um UPDATE condicionado ao DONO atual (`owner`): se duas tentativas
- * disputam a retomada, só a primeira muda a linha; a segunda vê 0 linhas.
+ * vencer) é um UPDATE condicionado ao DONO atual (`owner`) E ao estado que
+ * justificou a retomada (ver takeoverQuery()): se duas tentativas disputam a
+ * retomada, só a primeira muda a linha; a segunda vê 0 linhas. E se a dona
+ * conclui entre a leitura e o UPDATE, a retomada perde e a requisição recebe
+ * o replay — nunca uma segunda execução.
  *
  * FINALIZAR e LIBERAR também são condicionados ao dono: uma execução antiga
  * que termina depois de ter sido retomada não sobrescreve a nova.
@@ -87,10 +90,7 @@ final class IdempotencyStore
                 return Acquisition::existing($record);
             }
 
-            $taken = $this->table()
-                ->where('scope_hash', $scopeHash)
-                ->where('key_hash', $keyHash)
-                ->where('owner', $record->owner)
+            $taken = $this->takeoverQuery($scopeHash, $keyHash, $record, $takeover, $requestHash, $now)
                 ->update([...$fresh, 'created_at' => $now]);
 
             if ($taken === 1) {
@@ -192,6 +192,40 @@ final class IdempotencyStore
         }
 
         return null;
+    }
+
+    /**
+     * O UPDATE da retomada só pega a linha que AINDA está no estado que a
+     * justificou — não basta o dono. Entre a leitura e o UPDATE, a execução
+     * dona pode concluir (no modo `transactional`, o UPDATE da retomada fica
+     * preso na trava da linha até o commit dela e, no PostgreSQL, é
+     * reavaliado contra a versão já confirmada): filtrar só pelo dono
+     * devolveria a linha concluída a "em processamento" e a rota executaria
+     * de novo. Com o estado na condição, a retomada perde (0 linhas) e a
+     * nova leitura encontra a conclusão — replay.
+     *
+     * - `expired`: a linha continua vencida e no MESMO status lido;
+     * - `abandoned`: continua em processamento, com o prazo vencido e o
+     *   mesmo corpo.
+     */
+    private function takeoverQuery(string $scopeHash, string $keyHash, IdempotencyRecord $record, string $takeover, string $requestHash, CarbonImmutable $now): Builder
+    {
+        $query = $this->table()
+            ->where('scope_hash', $scopeHash)
+            ->where('key_hash', $keyHash)
+            ->where('owner', $record->owner);
+
+        if ($takeover === Acquisition::EXPIRED) {
+            return $query
+                ->where('status', $record->status)
+                ->where('expires_at', '<=', $now);
+        }
+
+        return $query
+            ->where('status', self::PROCESSING)
+            ->whereNotNull('locked_until')
+            ->where('locked_until', '<=', $now)
+            ->where('request_hash', $requestHash);
     }
 
     /**

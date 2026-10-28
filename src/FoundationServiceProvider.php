@@ -30,6 +30,7 @@ use Twstec\Kit\Foundation\Logging\CorrelationContext;
 use Twstec\Kit\Foundation\Logging\Middleware\RequestLogging;
 use Twstec\Kit\Foundation\Logging\RequestLogChannel;
 use Twstec\Kit\Foundation\Security\ApiRateLimit;
+use Twstec\Kit\Foundation\Security\ClientBucket;
 use Twstec\Kit\Foundation\Security\Middleware\EdgeRateLimit;
 use Twstec\Kit\Foundation\Security\Middleware\SecurityHeaders;
 use Twstec\Kit\Foundation\Security\Middleware\SecurityValidation;
@@ -219,7 +220,10 @@ final class FoundationServiceProvider extends ServiceProvider
      *   falhas de autenticação têm balde próprio por IP. A regra inteira mora
      *   em Security\ApiRateLimit.
      * - `sensitive`: rotas sensíveis (login, códigos de verificação,
-     *   recuperação de senha), por usuário ou IP.
+     *   recuperação de senha), pelo usuário autenticado ou, para visitante,
+     *   pelo balde do cliente (Security\ClientBucket — IPv4 exato, IPv6 pelo
+     *   prefixo: trocar de endereço dentro do próprio /64 não dá orçamento
+     *   novo).
      *
      * Um RateLimiter::for de mesmo nome na aplicação (provider que sobe
      * depois deste) substitui o do pacote. Opt-out:
@@ -240,7 +244,7 @@ final class FoundationServiceProvider extends ServiceProvider
 
         RateLimiter::for('sensitive', function (Request $request): Limit {
             return Limit::perMinute((int) config('security.rate_limit.sensitive', 5))
-                ->by((string) ($request->user()?->getAuthIdentifier() ?: $request->ip()));
+                ->by((string) ($request->user()?->getAuthIdentifier() ?: ClientBucket::for($request)));
         });
     }
 

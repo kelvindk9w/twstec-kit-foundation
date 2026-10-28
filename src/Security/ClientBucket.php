@@ -7,8 +7,9 @@ namespace Twstec\Kit\Foundation\Security;
 use Illuminate\Http\Request;
 
 /**
- * "Quem é este cliente" para fins de LIMITE (rate limit da borda e amostragem
- * do tráfego de varredura na trilha de auditoria).
+ * "Quem é este cliente" para fins de LIMITE (rate limit da borda, limitador
+ * `sensitive`, bloqueios do login e do segundo fator do twstec/kit-auth e
+ * amostragem do tráfego de varredura na trilha de auditoria).
  *
  * IPv4: o endereço exato. É o que o `ip()` devolve depois do TrustProxies —
  * por isso o limite só é justo quando TRUSTED_PROXIES está certo (sem ele,
@@ -29,7 +30,17 @@ final class ClientBucket
 {
     public static function for(Request $request): string
     {
-        $ip = (string) $request->ip();
+        return self::forAddress((string) $request->ip());
+    }
+
+    /**
+     * O mesmo balde a partir do endereço já extraído — para regra que recebe
+     * o IP como texto (ex.: o limite por origem do segundo fator do login,
+     * chamado tanto pelo painel quanto pelo /admin).
+     */
+    public static function forAddress(?string $ip): string
+    {
+        $ip = (string) $ip;
 
         if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             return filter_var($ip, FILTER_VALIDATE_IP) !== false ? $ip : 'unknown';

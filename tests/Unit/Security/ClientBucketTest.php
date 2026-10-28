@@ -37,3 +37,9 @@ it('o prefixo IPv6 é configurável, inclusive fora de fronteira de byte', funct
 it('endereço ausente ou inválido cai num balde fixo, sem escapar do limite', function () {
     expect(bucketFor('isto-nao-e-ip'))->toBe('unknown');
 });
+
+it('o endereço em texto cai no mesmo balde que a requisição', function () {
+    expect(ClientBucket::forAddress('2001:db8:1:2:aaaa::9'))->toBe(bucketFor('2001:db8:1:2::1'))
+        ->and(ClientBucket::forAddress('203.0.113.9'))->toBe('203.0.113.9')
+        ->and(ClientBucket::forAddress(null))->toBe('unknown');
+});

@@ -61,7 +61,9 @@ use Twstec\Kit\Foundation\Logging\EndpointSignature;
  *      a linha fica "em processamento" — 409 até vencer, salvo prazo de
  *      retomada configurado (IDEMPOTENCY_ABANDONED_TAKEOVER_SECONDS). No modo
  *      `transactional`, a rota e a conclusão são confirmadas juntas, e a
- *      retomada depois de `lock_seconds` é segura. Erro de servidor nunca congela a
+ *      retomada depois de `lock_seconds` é segura para efeito TODO no banco
+ *      (efeito externo de uma execução só lenta não volta atrás — ver
+ *      docs/api.md). Erro de servidor nunca congela a
  *      chave; erro de validação (422) só congela com
  *      `idempotency.freeze_validation_errors`; os demais 4xx, só os listados
  *      em `idempotency.freeze_client_errors` — e 401, 403, 408, 409, 425 e
@@ -220,7 +222,10 @@ final class HandleIdempotencyKey
      *   executa uma vez só.
      *
      * Um processo que morre no meio deixa a linha "em processamento" sem nada
-     * confirmado: depois de `idempotency.lock_seconds`, a retomada é segura.
+     * confirmado: depois de `idempotency.lock_seconds`, a retomada é segura
+     * para o que está no banco. Se a execução só estava LENTA, a conclusão
+     * dela é recusada (outro dono) e a transação desfeita; o que ela fez fora
+     * do banco fica — por isso rota com efeito externo não usa este modo.
      */
     private function runAtomically(Request $request, Closure $next, IdempotencyOptions $options, string $scopeHash, string $keyHash, string $owner, IdempotencyKey $key): Response
     {

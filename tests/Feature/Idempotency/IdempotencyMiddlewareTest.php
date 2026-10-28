@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Log\Events\MessageLogged;
@@ -501,6 +502,52 @@ it('a execução antiga que termina depois de retomada não sobrescreve a nova',
     $store->release($scope, $key, (string) $old->owner);
     expect(DB::table(IdempotencyStore::TABLE)->value('response'))->toBe('y');
 });
+
+it('a dona que CONCLUI entre a leitura e a retomada vence: quem ia retomar recebe o replay, nunca uma segunda execução', function (string $uri, bool $transactional): void {
+    config()->set('idempotency.abandoned_takeover_seconds', 120);
+    $this->freezeSecond();
+    $start = CarbonImmutable::now();
+
+    $first = idemPost(uri: $uri)->assertCreated();
+    $concluida = (array) DB::table(IdempotencyStore::TABLE)->first();
+
+    // A primeira execução "ainda está rodando" além do prazo de retomada.
+    DB::table(IdempotencyStore::TABLE)->update(['status' => IdempotencyStore::PROCESSING, 'locked_until' => $start->addSeconds(120), 'response' => null, 'response_status' => null]);
+    $this->travelTo($start->addSeconds(121));
+
+    // A CORRIDA: logo depois de a nova tentativa LER a linha (em processamento,
+    // prazo vencido — retomável), a dona termina e confirma a conclusão. No
+    // PostgreSQL é o que acontece quando o UPDATE da retomada espera a trava
+    // da linha e é reavaliado depois do commit da dona.
+    $concluiu = false;
+    DB::listen(function (QueryExecuted $query) use (&$concluiu, $concluida): void {
+        if ($concluiu || ! str_starts_with(strtolower(ltrim($query->sql)), 'select') || ! str_contains($query->sql, IdempotencyStore::TABLE)) {
+            return;
+        }
+
+        $concluiu = true;
+        DB::table(IdempotencyStore::TABLE)->update([
+            'status' => IdempotencyStore::COMPLETED,
+            'locked_until' => null,
+            'response' => $concluida['response'],
+            'response_status' => $concluida['response_status'],
+        ]);
+    });
+
+    $second = idemPost(uri: $uri);
+
+    expect($concluiu)->toBeTrue()
+        ->and($second->status())->toBe(201)
+        ->and($second->headers->get('Idempotent-Replayed'))->toBe('true')
+        ->and($second->getContent())->toBe($first->getContent())
+        ->and(idemOrders())->toBe(1)
+        ->and(idemLog('api.idempotency.abandoned_taken_over'))->toHaveCount(0)
+        ->and(DB::table(IdempotencyStore::TABLE)->value('status'))->toBe(IdempotencyStore::COMPLETED)
+        ->and(DB::table(IdempotencyStore::TABLE)->value('owner'))->toBe($concluida['owner']);
+})->with([
+    'rota comum com prazo de retomada' => ['/api/pedidos', false],
+    'modo transactional (IDEMPOTENCY_LOCK_SECONDS)' => ['/api/pedidos-atomicos', true],
+]);
 
 it('guarda só HASHES do pedido e a resposta CIFRADA: nada do corpo nem da chave em claro na tabela', function (): void {
     idemPost(['item' => 'marcador-do-corpo-xyz'])->assertCreated();

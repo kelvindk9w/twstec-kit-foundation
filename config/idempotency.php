@@ -38,7 +38,9 @@ return [
     // chave são gravadas na MESMA transação — "em processamento" quer dizer
     // "nada foi confirmado". Depois deste prazo, em SEGUNDOS, a execução
     // abandonada é retomada com segurança. Precisa ser MAIOR que a requisição
-    // mais lenta da rota.
+    // mais lenta da rota: uma execução só LENTA é retomada e roda duas vezes
+    // (o banco fica só com a segunda, mas efeito fora do banco — chamada a
+    // provedor externo — acontece nas duas). Ver docs/api.md.
     'lock_seconds' => (int) env('IDEMPOTENCY_LOCK_SECONDS', 120),
 
     // Espera curta, em MILISSEGUNDOS, quando a mesma chave já está em
