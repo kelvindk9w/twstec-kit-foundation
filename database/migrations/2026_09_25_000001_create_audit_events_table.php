@@ -20,8 +20,8 @@ use Twstec\Kit\Foundation\Audit\Support\AuditEventTrigger;
  *   aconteceu com ESTE registro e onde aconteceu ESTA ação — todas por
  *   período.
  * - No PostgreSQL, o gatilho AuditEventTrigger recusa UPDATE/TRUNCATE e
- *   todo DELETE fora da poda. Em produção, complementar com REVOKE UPDATE
- *   da role da aplicação (docs/logs-lgpd.md).
+ *   todo DELETE fora da poda. Com papéis separados, o papel da aplicação só
+ *   tem SELECT e INSERT aqui (docs/producao.md, "Papéis do PostgreSQL").
  */
 return new class extends Migration
 {

@@ -23,8 +23,9 @@ use Illuminate\Support\Facades\DB;
  * O QUE NENHUM GATILHO COBRE: quem é DONO da tabela pode desligar o gatilho
  * ou apagar a tabela. Isto fecha o acidente e o atalho, não um atacante com
  * acesso de dono ao banco. Contra esse, a defesa é a separação de papéis no
- * PostgreSQL de produção (REVOKE UPDATE da role da aplicação e uma role
- * sem ownership do esquema) — ver docs/logs-lgpd.md.
+ * PostgreSQL (Twstec\Kit\Foundation\Database: a aplicação conecta com um
+ * papel que não é dono e só tem SELECT/INSERT aqui; `db:check-roles`
+ * confere) — ver docs/producao.md, "Papéis do PostgreSQL".
  *
  * Fora do PostgreSQL (SQLite dos testes) tudo aqui é no-op e a proteção
  * fica por conta da aplicação.

@@ -200,6 +200,47 @@ it('fila sync: o job roda dentro da requisição com o id dela, e a requisição
         ->and($response->json('after'))->toBe($requestId);
 });
 
+it('job como closure: o worker roda o CORPO com o id da requisição (não só marca como concluído)', function (): void {
+    // A closure fica na própria linha: o laravel/serializable-closure acha a
+    // closure pela linha em que ela começa (ver docs/tenancy.md, "Jobs").
+    Route::get('/tracing/closure', function () {
+        dispatch(function (): void {
+            TracingProbe::see('closure');
+        });
+
+        return response()->noContent();
+    });
+
+    $requestId = $this->get('/tracing/closure')->headers->get('X-Correlation-Id');
+
+    expect(lastQueuedPayload()['displayName'])->toStartWith('Closure (')
+        ->and(lastQueuedPayload()[QueueCorrelation::PAYLOAD_KEY])->toBe(['id' => $requestId, 'origin' => 'http']);
+
+    workOnce();
+
+    expect(TracingProbe::of('closure'))->toBe(['label' => 'closure', 'id' => $requestId, 'origin' => 'http'])
+        ->and(DB::table('jobs')->count())->toBe(0)
+        ->and(DB::table('failed_jobs')->count())->toBe(0);
+});
+
+it('job como closure na fila sync: o corpo roda na hora, com o id da requisição', function (): void {
+    config(['queue.default' => 'sync']);
+
+    Route::get('/tracing/closure-sync', function () {
+        dispatch(function (): void {
+            TracingProbe::see('closure-sync');
+        });
+
+        return response()->json(['after' => CorrelationId::current()]);
+    });
+
+    $response = $this->get('/tracing/closure-sync')->assertOk();
+    $requestId = $response->headers->get('X-Correlation-Id');
+
+    expect(TracingProbe::of('closure-sync'))->toBe(['label' => 'closure-sync', 'id' => $requestId, 'origin' => 'http'])
+        ->and($response->json('after'))->toBe($requestId);
+});
+
 it('chamada Http:: de dentro do job leva o cabeçalho com o id da requisição de origem', function (): void {
     Http::fake(['orders.example.test/*' => Http::response(['ok' => true])]);
 

@@ -6,8 +6,13 @@ namespace Twstec\Kit\Foundation;
 
 use Illuminate\Auth\Middleware\Authorize;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\CommandFinished;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Http\Kernel as HttpKernelContract;
+use Illuminate\Database\Events\MigrationsEnded;
+use Illuminate\Database\Events\NoPendingMigrations;
 use Illuminate\Foundation\Http\Kernel as HttpKernel;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Middleware\TrustProxies as FrameworkTrustProxies;
@@ -21,6 +26,8 @@ use Illuminate\View\Factory as ViewFactory;
 use LogicException;
 use Spatie\Backup\Commands\BackupCommand;
 use Twstec\Kit\Foundation\Backup\Console\GuardedBackupCommand;
+use Twstec\Kit\Foundation\Database\Console\CheckDatabaseRoles;
+use Twstec\Kit\Foundation\Database\DatabaseRoles;
 use Twstec\Kit\Foundation\Http\Middleware\TrustHosts;
 use Twstec\Kit\Foundation\Http\Middleware\TrustProxies;
 use Twstec\Kit\Foundation\Idempotency\Console\PruneIdempotencyKeys;
@@ -131,7 +138,7 @@ final class FoundationServiceProvider extends ServiceProvider
      * aplicação pode publicar a própria cópia (`vendor:publish --tag=
      * foundation-config`); as chaves de primeiro nível dela prevalecem.
      */
-    private const CONFIG_FILES = ['security', 'audit', 'settings', 'platform', 'tracing', 'idempotency'];
+    private const CONFIG_FILES = ['security', 'audit', 'settings', 'platform', 'tracing', 'idempotency', 'database_roles'];
 
     public function register(): void
     {
@@ -158,6 +165,9 @@ final class FoundationServiceProvider extends ServiceProvider
         // agendamento e o Artisan::call(). Nada disso roda no boot.
         $this->app->bind(BackupCommand::class, GuardedBackupCommand::class);
 
+        // Papel de migração × papel da aplicação (ver Database\DatabaseRoles).
+        $this->app->singleton(DatabaseRoles::class);
+
         $this->registerTranslations();
     }
 
@@ -178,7 +188,8 @@ final class FoundationServiceProvider extends ServiceProvider
         $this->registerModuleDirective();
 
         if ($this->app->runningInConsole()) {
-            $this->commands([PruneOutboundHttpLogs::class, PruneIdempotencyKeys::class]);
+            $this->commands([PruneOutboundHttpLogs::class, PruneIdempotencyKeys::class, CheckDatabaseRoles::class]);
+            $this->registerDatabaseRoles();
 
             $this->publishes(
                 array_combine(
@@ -188,6 +199,22 @@ final class FoundationServiceProvider extends ServiceProvider
                 'foundation-config',
             );
         }
+    }
+
+    /**
+     * Separação de papéis no PostgreSQL (Database\DatabaseRoles): os comandos
+     * de estrutura e as podas rodam com o papel de migração, e todo `migrate`
+     * termina acertando os privilégios do papel da aplicação. Sem
+     * DB_MIGRATION_USERNAME, os ouvintes não fazem nada.
+     */
+    private function registerDatabaseRoles(): void
+    {
+        $events = $this->app->make(Dispatcher::class);
+
+        $events->listen(CommandStarting::class, fn (CommandStarting $event) => $this->app->make(DatabaseRoles::class)->commandStarting($event));
+        $events->listen(CommandFinished::class, fn (CommandFinished $event) => $this->app->make(DatabaseRoles::class)->commandFinished($event));
+        $events->listen(MigrationsEnded::class, fn (MigrationsEnded $event) => $this->app->make(DatabaseRoles::class)->migrationsFinished($event));
+        $events->listen(NoPendingMigrations::class, fn (NoPendingMigrations $event) => $this->app->make(DatabaseRoles::class)->migrationsFinished($event));
     }
 
     /**

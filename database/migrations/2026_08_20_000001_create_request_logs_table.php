@@ -14,9 +14,10 @@ use Illuminate\Support\Facades\Schema;
  * - tenant_uuid nullable: preenchido quando o tenant é resolvido (ResolveTenant);
  *   log sem tenant = possível ataque.
  * - payload: JSON já sanitizado/redigido (LGPD) — NUNCA dado sensível cru.
- * - Em produção, complementar com REVOKE UPDATE/DELETE da role da aplicação
- *   (retificações só por superuser) e particionamento mensal quando o
- *   volume crescer (ver seção 2.3 da pesquisa de stack).
+ * - No PostgreSQL com papéis separados, o papel da aplicação só tem SELECT,
+ *   INSERT e o UPDATE das colunas do ciclo de vida (Twstec\Kit\Foundation\
+ *   Database\AppendOnlyTables); particionamento mensal quando o volume
+ *   crescer.
  */
 return new class extends Migration
 {
