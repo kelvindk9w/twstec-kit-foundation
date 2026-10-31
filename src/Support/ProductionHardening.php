@@ -10,12 +10,14 @@ use Illuminate\Support\Facades\URL;
 use Twstec\Kit\Foundation\Http\TrustedProxies;
 use Twstec\Kit\Foundation\Mail\NonDeliveringMailers;
 use Twstec\Kit\Foundation\Security\AdminIpAllowlist;
+use Twstec\Kit\Foundation\Security\SignedBodyPaths;
 
 /**
  * As guardas de PRODUÇÃO da base do kit, numa ordem só: segredo crítico
  * (recusa o boot sem chave), HTTPS nas URLs geradas, APP_DEBUG forçado para
  * false e os avisos de boot dos opt-outs de segurança (allowlist do /admin,
- * proxies confiáveis, e-mail que não entrega).
+ * proxies confiáveis, e-mail que não entrega, caminho de corpo assinado
+ * recusado).
  *
  * Quem chama é o boot do FoundationServiceProvider, sozinho — a proteção não
  * depende de a aplicação lembrar de nada. Opt-out só por config explícita
@@ -102,6 +104,21 @@ final class ProductionHardening
                 Log::warning(sprintf(
                     'A allowlist do /admin contém endereços que são proxies confiáveis (%s): como TODA requisição chega com o endereço do proxy, a barreira de origem aceita qualquer visitante — configurada na aparência, inexistente na prática. Remova esses endereços de ADMIN_ALLOWED_IPS e liste os IPs de quem ADMINISTRA. Ver Twstec\Kit\Foundation\Security\AdminIpAllowlist.',
                     implode(', ', AdminIpAllowlist::proxyEntries()),
+                ));
+            }
+
+            // Caminho de corpo assinado RECUSADO por ser largo demais (ver
+            // SignedBodyPaths). A recusa é o lado estreito — o corpo continua
+            // inspecionado e gravado na trilha —, mas quem escreveu a entrada
+            // esperava o contrário: a mensagem do provedor pode ser recusada
+            // no modo `block` e o texto de terceiros vai para a trilha. Sem
+            // aviso, a configuração parece aplicada e não está.
+            $rejectedSignedPaths = SignedBodyPaths::rejected();
+
+            if ($rejectedSignedPaths !== []) {
+                Log::warning(sprintf(
+                    'SECURITY_VALIDATION_SIGNED_BODY_PATHS tem entradas RECUSADAS por serem largas demais (%s): nesses caminhos o corpo continua inspecionado pelo filtro de ataques e gravado na trilha. Escreva o caminho literal do webhook (`webhooks/whatsapp`) ou um prefixo literal terminado em `/*` (`webhooks/meta/*`). Ver Twstec\Kit\Foundation\Security\SignedBodyPaths.',
+                    implode(', ', $rejectedSignedPaths),
                 ));
             }
 

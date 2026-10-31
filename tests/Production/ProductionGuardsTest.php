@@ -118,6 +118,29 @@ it('opt-out das guardas: sobe sem recusar, mas avisa no log', function (): void 
         ->and(productionLogContents($file))->toContain('SECURITY_PRODUCTION_GUARDS=false');
 });
 
+it('caminho de corpo assinado largo demais é recusado e avisado no log', function (): void {
+    [$logging, $file] = productionLogCapture();
+
+    $this->bootProductionApp([
+        'config' => [...$logging, 'security.validation.signed_body_paths' => ['webhooks/whatsapp', '*', 'api*']],
+    ]);
+
+    expect(productionLogContents($file))
+        ->toContain('SECURITY_VALIDATION_SIGNED_BODY_PATHS')
+        ->toContain('(*, api*)')
+        ->not->toContain('webhooks/whatsapp,');
+});
+
+it('caminho de corpo assinado válido não gera aviso', function (): void {
+    [$logging, $file] = productionLogCapture();
+
+    $this->bootProductionApp([
+        'config' => [...$logging, 'security.validation.signed_body_paths' => ['webhooks/whatsapp', 'webhooks/meta/*']],
+    ]);
+
+    expect(productionLogContents($file))->not->toContain('SECURITY_VALIDATION_SIGNED_BODY_PATHS');
+});
+
 it('opt-out dos limitadores: não registra, mas avisa no log', function (): void {
     [$logging, $file] = productionLogCapture();
 

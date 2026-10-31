@@ -20,6 +20,7 @@ use Twstec\Kit\Foundation\Logging\ScanTrafficSampler;
 use Twstec\Kit\Foundation\Security\AttackEvidence;
 use Twstec\Kit\Foundation\Security\Middleware\SecurityValidation;
 use Twstec\Kit\Foundation\Security\RequestInputs;
+use Twstec\Kit\Foundation\Security\SignedBodyPaths;
 
 /**
  * Pipeline de logs de requisição — segundo middleware da
@@ -185,6 +186,9 @@ final class RequestLogging
         // BLOQUEADA — em vez do payload comum ou do resumo do Livewire.
         $payload = match (true) {
             $attackType !== null => $this->evidence->payload($request),
+            // Corpo assinado (webhook recebido): nem o resumo do Livewire lê o
+            // corpo — a visão da trilha já traz só a query e o tamanho.
+            SignedBodyPaths::matches($request) => $this->redactor->redactArray(RequestInputs::extract($request)),
             $this->shouldSummarize($request) => $this->summarizePayload($request),
             default => $this->redactor->redactArray(RequestInputs::extract($request)),
         };

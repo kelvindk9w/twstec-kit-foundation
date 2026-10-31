@@ -30,6 +30,8 @@ final readonly class Platform
         public array $availableLocales,
         public string $displayTimezone,
         public string $currency,
+        public ?string $faviconUrl = null,
+        public ?string $faviconSvgUrl = null,
     ) {}
 
     /**
@@ -56,6 +58,56 @@ final readonly class Platform
             availableLocales: array_values(array_map('strval', (array) $config['available_locales'])),
             displayTimezone: (string) $config['display_timezone'],
             currency: (string) $config['currency'],
+            faviconUrl: filled($config['favicon_url'] ?? null) ? (string) $config['favicon_url'] : null,
+            faviconSvgUrl: filled($config['favicon_svg_url'] ?? null) ? (string) $config['favicon_svg_url'] : null,
         );
+    }
+
+    /**
+     * Há escolha de idioma? Com um idioma só, nenhuma tela mostra seletor
+     * (site, entrada, painel, perfil, /admin, galeria de e-mails) — um
+     * seletor com uma opção só é ruído.
+     */
+    public function offersLocaleChoice(): bool
+    {
+        return count($this->availableLocales) > 1;
+    }
+
+    /**
+     * A inicial do nome (a marca de reserva sem logotipo): a primeira letra
+     * ou algarismo, em maiúscula; "?" quando o nome não tem nenhum.
+     */
+    public function initial(): string
+    {
+        return preg_match('/[\p{L}\p{N}]/u', $this->name, $match) === 1
+            ? mb_strtoupper($match[0])
+            : '?';
+    }
+
+    /**
+     * Os ícones da aba, na ordem do <head>: o favicon configurado e a
+     * variante SVG; sem eles, o logotipo; sem logotipo, a inicial gerada.
+     *
+     * @return list<array{href: string, type: string|null}>
+     */
+    public function favicons(): array
+    {
+        $icons = [];
+
+        if ($this->faviconUrl !== null) {
+            $icons[] = ['href' => $this->faviconUrl, 'type' => null];
+        }
+
+        if ($this->faviconSvgUrl !== null) {
+            $icons[] = ['href' => $this->faviconSvgUrl, 'type' => 'image/svg+xml'];
+        }
+
+        if ($icons === []) {
+            $icons[] = filled($this->logoUrl)
+                ? ['href' => (string) $this->logoUrl, 'type' => null]
+                : ['href' => BrandMark::iconDataUri(), 'type' => 'image/svg+xml'];
+        }
+
+        return $icons;
     }
 }

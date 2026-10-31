@@ -18,6 +18,7 @@ use Twstec\Kit\Foundation\Logging\PersistFailure;
 use Twstec\Kit\Foundation\Security\AttackDetector;
 use Twstec\Kit\Foundation\Security\AttackEvidence;
 use Twstec\Kit\Foundation\Security\RequestInputs;
+use Twstec\Kit\Foundation\Security\SignedBodyPaths;
 use Twstec\Kit\Foundation\Security\ValidationMode;
 
 /**
@@ -65,6 +66,13 @@ use Twstec\Kit\Foundation\Security\ValidationMode;
  * componentes envolvidos são autodefendidos (delegated_components). A
  * requisição delegada segue em qualquer modo, mas a linha da trilha também
  * sai marcada e neutralizada, como no modo observe.
+ *
+ * Corpo assinado (config security.validation.signed_body_paths — ver
+ * Twstec\Kit\Foundation\Security\SignedBodyPaths): em webhook recebido, o
+ * corpo é autenticado por HMAC na aplicação e traz texto de terceiros. Nesses
+ * caminhos o CONTEÚDO do corpo não é inspecionado (nem recusado, em nenhum
+ * modo), e a trilha nunca o copia; o teto de inspeção continua contando o
+ * corpo, e query, cabeçalhos e caminho continuam inspecionados.
  */
 final class SecurityValidation
 {
@@ -118,6 +126,12 @@ final class SecurityValidation
                     'correlation_id' => $correlationId,
                 ], 413)
                 ->header(CorrelationId::HEADER, $correlationId);
+        }
+
+        // Corpo assinado: o teto acima contou o corpo inteiro; a detecção
+        // varre só o que não é corpo (a query), mais cabeçalhos e caminho.
+        if (SignedBodyPaths::matches($request)) {
+            $inputs = ['query' => $inputs['query'] ?? []];
         }
 
         [$attackType, $source] = $this->inspect($request, $inputs);

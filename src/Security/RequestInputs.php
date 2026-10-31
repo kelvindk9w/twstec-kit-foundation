@@ -24,6 +24,11 @@ use Symfony\Component\HttpFoundation\File\UploadedFile;
  *   e corpo não estruturado. A visão mesclada não serve para inspecionar:
  *   nela o corpo sobrescreve a query de mesmo nome, e a rota que lê
  *   `$request->query('q')` usaria um valor que ninguém inspecionou.
+ *
+ * Caminho de corpo assinado (SignedBodyPaths — webhook recebido): a visão da
+ * trilha leva só a query e o resumo do corpo (tamanho e formato), nunca o
+ * conteúdo. É aqui, e não em cada gravação, para que nenhuma linha da trilha
+ * (comum, observada ou bloqueada) copie o corpo por esquecimento.
  */
 final class RequestInputs
 {
@@ -36,6 +41,15 @@ final class RequestInputs
     public static function extract(Request $request): array
     {
         $query = $request->query->all();
+
+        if (SignedBodyPaths::matches($request)) {
+            /** @var array<string, mixed> $data */
+            $data = $query;
+            $data['_corpo_assinado'] = self::signedBodySummary($request);
+
+            return $data;
+        }
+
         $body = self::body($request);
 
         /** @var array<string, mixed> $data */
@@ -129,6 +143,23 @@ final class RequestInputs
         return [
             'headers' => $headers,
             'path' => '/'.ltrim($request->decodedPath(), '/'),
+        ];
+    }
+
+    /**
+     * O que a trilha guarda do corpo de um caminho assinado: tamanho e
+     * formato, nunca o conteúdo (é dado de terceiro autenticado pela
+     * aplicação — ver SignedBodyPaths). O formato é o reconhecido pelo
+     * framework a partir do Content-Type (`json`, `form`...), não o cabeçalho
+     * cru, que é texto do remetente.
+     *
+     * @return array{tamanho_bytes: int, formato: string}
+     */
+    public static function signedBodySummary(Request $request): array
+    {
+        return [
+            'tamanho_bytes' => strlen((string) $request->getContent()),
+            'formato' => $request->getContentTypeFormat() ?? 'desconhecido',
         ];
     }
 
