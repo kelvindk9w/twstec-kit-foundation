@@ -69,7 +69,6 @@ Os providers são descobertos automaticamente (`extra.laravel.providers`):
 configurações editáveis. Em seguida:
 
 ```bash
-php artisan vendor:publish --tag=foundation-config   # opcional: security, audit, settings, platform, tracing, idempotency
 php artisan migrate
 ```
 
@@ -85,24 +84,32 @@ php artisan migrate
   aplicativo prevalece). O `idempotent` entra na lista de prioridade do kernel
   depois do `Authorize`: roda depois da autenticação, do limite e da
   autorização em qualquer ordem declarada na rota.
-- **Configuração padrão** (`mergeConfigFrom`) de `security`, `audit`,
-  `settings`, `platform`, `tracing` e `idempotency`. O aplicativo pode publicar a própria cópia
-  (`--tag=foundation-config`); as chaves de primeiro nível dela prevalecem —
-  é o arranjo de todo pacote Laravel. O starter mantém as quatro publicadas.
+- **Configuração padrão** de `security`, `audit`, `settings`, `platform`,
+  `tracing`, `idempotency` e `database_roles`, sem cópia no aplicativo. Para
+  mudar um bloco, o aplicativo cria `config/<arquivo>.php` só com as chaves de
+  primeiro nível que muda — cada uma vence a do pacote inteira (é a regra do
+  `mergeConfigFrom`); valor solto se muda pelo `.env`. Os módulos acrescentam
+  o que é deles (`PackageConfig::contribute`). Ver
+  [personalização](../../docs/personalizacao.md).
+- **`php artisan kit:overrides`:** lista os arquivos do aplicativo que
+  sobrescrevem textos, e-mails e configurações do kit e diz quais são só
+  cópias do padrão (podem sair). Não altera nada.
 - **Migrations** de `request_logs`, `settings`, `audit_events` e (2.x)
   `outbound_http_logs` e `idempotency_keys`, rodadas direto do pacote, com os **mesmos nomes de
   arquivo** que tinham no aplicativo na 1.x: um banco que já as rodou não vê nada pendente, e um banco novo as roda
   na mesma ordem. Não publique essas migrations.
 - **Views do e-mail** com os nomes de sempre: `<x-email::layouts.kit>`,
   `<x-email::button>` e os demais componentes, e `mail.text.auto`. Um arquivo
-  de mesmo nome em `resources/views/mail/` do aplicativo prevalece. Também
+  de mesmo nome em `resources/views/mail/` do aplicativo prevalece (o mesmo
+  vale para o corpo dos e-mails dos outros pacotes: `PackageViews`). Também
   respondem pelo namespace `foundation::` (ex.: `foundation::mail.layouts.kit`).
 - **Traduções** (pt-BR, en, es) com as chaves de sempre, sem namespace:
   `security.*`, `api.errors.*`, `mail.footer.*`, `audit.*` e `tracing.*`. **O aplicativo
   vence:** a pasta do pacote entra no carregador logo ANTES do `lang/` do
   aplicativo, então numa mesma chave vale o texto do aplicativo, e o pacote só
   preenche o que ele não definiu — em qualquer grupo, nos três idiomas e no
-  idioma de reserva. Para trocar o rodapé dos e-mails, basta pôr
+  idioma de reserva (traduções de todos os pacotes do kit funcionam assim:
+  `PackageTranslations`). Para trocar o rodapé dos e-mails, basta pôr
   `footer.transactional` no `lang/pt_BR/mail.php` do aplicativo. (Não se usa
   namespace `foundation::` porque ele mudaria as chaves que o código e os
   aplicativos já chamam.)

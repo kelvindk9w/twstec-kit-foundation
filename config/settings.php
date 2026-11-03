@@ -5,8 +5,9 @@ declare(strict_types=1);
 // =============================================================================
 // Configurações editáveis pelo super admin pela UI — padrão do pacote
 // twstec/kit-foundation (só as chaves da própria base: os limites de
-// requisição). O aplicativo publica a própria cópia com as chaves dos
-// módulos que instalou; a lista dele substitui esta.
+// requisição). Os módulos opcionais acrescentam as deles sozinhos quando
+// instalados (contas: expiração de chaves de API; uploads: limites de
+// tamanho); o aplicativo acrescenta as próprias em config/settings.php.
 //
 // WHITELIST (lei): somente as chaves abaixo podem ser editadas no painel
 // /admin → Configurações. Cada chave mapeia para um caminho de config: um

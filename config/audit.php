@@ -26,8 +26,8 @@ return [
     // - Setting: o SettingsManager registra a mudança ele mesmo, com a chave
     //   e o de/para legíveis (`setting.changed`) — a linha crua do model
     //   (`{"v": 10}`) só duplicaria a informação;
-    // O aplicativo que publica esta config acrescenta os models dos outros
-    //   módulos (ex.: as credenciais temporárias da autenticação).
+    // Os outros módulos acrescentam os deles sozinhos (a autenticação: as
+    //   credenciais temporárias do fluxo de confirmação).
     // Acrescentar um model aqui tira as escritas dele da trilha — o teste de
     // arquitetura exige que resource de /admin com escrita não esteja aqui.
     'ignored_models' => [

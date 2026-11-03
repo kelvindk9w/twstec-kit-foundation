@@ -22,10 +22,12 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\View\Compilers\BladeCompiler;
-use Illuminate\View\Factory as ViewFactory;
 use LogicException;
 use Spatie\Backup\Commands\BackupCommand;
 use Twstec\Kit\Foundation\Backup\Console\GuardedBackupCommand;
+use Twstec\Kit\Foundation\Customization\Console\ListOverrides;
+use Twstec\Kit\Foundation\Customization\PackageConfig;
+use Twstec\Kit\Foundation\Customization\PackageViews;
 use Twstec\Kit\Foundation\Database\Console\CheckDatabaseRoles;
 use Twstec\Kit\Foundation\Database\DatabaseRoles;
 use Twstec\Kit\Foundation\Http\Middleware\TrustHosts;
@@ -134,16 +136,17 @@ final class FoundationServiceProvider extends ServiceProvider
     ];
 
     /**
-     * Arquivos de configuração que o pacote traz com os valores padrão. A
-     * aplicação pode publicar a própria cópia (`vendor:publish --tag=
-     * foundation-config`); as chaves de primeiro nível dela prevalecem.
+     * Arquivos de configuração que o pacote traz com os valores padrão. O
+     * aplicativo só tem config/<arquivo>.php se mudar algo, com as chaves que
+     * muda de primeiro nível, cada uma inteira (ver
+     * Customization\PackageConfig).
      */
     private const CONFIG_FILES = ['security', 'audit', 'settings', 'platform', 'tracing', 'idempotency', 'database_roles'];
 
     public function register(): void
     {
         foreach (self::CONFIG_FILES as $name) {
-            $this->mergeConfigFrom($this->path("config/{$name}.php"), $name);
+            PackageConfig::merge($this->app, $this->path("config/{$name}.php"), $name);
         }
 
         // Canal de log `request_log` (a segunda camada das trilhas), só quando
@@ -188,7 +191,7 @@ final class FoundationServiceProvider extends ServiceProvider
         $this->registerModuleDirective();
 
         if ($this->app->runningInConsole()) {
-            $this->commands([PruneOutboundHttpLogs::class, PruneIdempotencyKeys::class, CheckDatabaseRoles::class]);
+            $this->commands([PruneOutboundHttpLogs::class, PruneIdempotencyKeys::class, CheckDatabaseRoles::class, ListOverrides::class]);
             $this->registerDatabaseRoles();
 
             $this->publishes(
@@ -459,9 +462,7 @@ final class FoundationServiceProvider extends ServiceProvider
 
         $this->loadViewsFrom($views, 'foundation');
 
-        $this->callAfterResolving('view', function (ViewFactory $factory) use ($views): void {
-            $factory->addLocation($views);
-        });
+        PackageViews::register($this->app, $views);
     }
 
     /**

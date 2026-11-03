@@ -27,11 +27,23 @@ use Illuminate\Translation\FileLoader;
 final class PackageTranslations
 {
     /**
+     * As pastas registradas, para o `kit:overrides` comparar com o lang/ do
+     * aplicativo (Customization\Console\ListOverrides).
+     *
+     * @var list<string>
+     */
+    private static array $paths = [];
+
+    /**
      * Registra a pasta `$path` do pacote. Roda quando o carregador é
      * resolvido, ou na hora, se ele já foi.
      */
     public static function register(Application $app, string $path): void
     {
+        if (! in_array($path, self::$paths, true)) {
+            self::$paths[] = $path;
+        }
+
         $install = static function (mixed $loader) use ($app, $path): void {
             if (! $loader instanceof FileLoader) {
                 // Carregador próprio da aplicação: o único gancho garantido é
@@ -73,5 +85,15 @@ final class PackageTranslations
         array_splice($paths, $position === false ? count($paths) : $position, 0, [$package]);
 
         return $paths;
+    }
+
+    /**
+     * As pastas de tradução dos pacotes do kit, na ordem de registro.
+     *
+     * @return list<string>
+     */
+    public static function paths(): array
+    {
+        return self::$paths;
     }
 }
