@@ -6,7 +6,7 @@ declare(strict_types=1);
 
 return [
 
-    'none' => 'Ningún archivo de la aplicación sobrescribe textos, correos o configuraciones del kit: vale el predeterminado de los paquetes.',
+    'none' => 'Ningún archivo de la aplicación sobrescribe textos, correos, configuraciones o pantallas del kit: vale el predeterminado de los paquetes.',
     'copy' => 'igual al predeterminado del kit — se puede borrar',
     'customized' => '{1} personaliza 1 clave: :keys|[2,*] personaliza :count claves: :keys',
     'same' => '{1} 1 clave igual al predeterminado puede salir|[2,*] :count claves iguales al predeterminado pueden salir',

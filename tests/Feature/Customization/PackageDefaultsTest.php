@@ -7,8 +7,10 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
+use Twstec\Kit\Foundation\Customization\LivewireScreens;
 use Twstec\Kit\Foundation\Customization\PackageConfig;
 use Twstec\Kit\Foundation\Customization\PackageViews;
+use Twstec\Kit\Foundation\Customization\ReactScreens;
 
 // =============================================================================
 // O padrão mora no pacote; o aplicativo sobrescreve só o que muda
@@ -18,6 +20,7 @@ use Twstec\Kit\Foundation\Customization\PackageViews;
 //     pacote inteira (mapa restringido fica restringido);
 //   - contribuição de módulo: entra sem cópia no aplicativo;
 //   - views: o arquivo de mesmo nome no aplicativo vence;
+//   - telas React: a página de mesmo caminho em resources/js vence;
 //   - `kit:overrides`: diz quais arquivos do aplicativo são só cópias.
 // =============================================================================
 
@@ -234,4 +237,48 @@ it('kit:overrides sem nenhum arquivo do kit no aplicativo: nada a apontar', func
     Artisan::call('kit:overrides');
 
     expect(Artisan::output())->toContain(__('kit_overrides.none'));
+});
+
+it('telas React: a página do aplicativo vence; sem ela, o documento raiz pede a do kit', function (): void {
+    $base = customizationDir(['resources/js/pages/dashboard.tsx' => 'export default function Dashboard() {}']);
+
+    app()->setBasePath($base);
+
+    expect(ReactScreens::pageEntry('dashboard'))->toBe('resources/js/pages/dashboard.tsx')
+        ->and(ReactScreens::pageEntry('auth/login'))->toBe(ReactScreens::PATH.'/pages/auth/login.tsx')
+        ->and(ReactScreens::path().'/pages/auth/login.tsx')->toBeFile();
+});
+
+it('kit:overrides: tela React igual à do kit pode sair; a personalizada é apontada', function (): void {
+    $kit = ReactScreens::path();
+
+    $base = customizationDir([
+        'resources/js/pages/auth/login.tsx' => (string) file_get_contents($kit.'/pages/auth/login.tsx'),
+        'resources/js/components/ui/button.tsx' => '// meu botão',
+        'resources/js/pages/dashboard.tsx' => '// tela do produto: o kit não tem',
+    ]);
+
+    app()->setBasePath($base);
+
+    Artisan::call('kit:overrides');
+
+    expect(Artisan::output())
+        ->toMatch('#resources/js/pages/auth/login\.tsx\s*\.*\s*'.preg_quote(__('kit_overrides.copy'), '#').'#')
+        ->toMatch('#resources/js/components/ui/button\.tsx\s*\.*\s*'.preg_quote(__('kit_overrides.customized_view'), '#').'#')
+        ->not->toContain('dashboard.tsx');
+});
+
+it('telas Livewire: a pasta do kit entra por último nas views, no view.paths e no layouts::', function (): void {
+    $application = customizationDir(['layouts/app.blade.php' => 'layout do aplicativo']);
+    app('view')->addNamespace('layouts', $application.'/layouts');
+
+    LivewireScreens::register(app());
+
+    $paths = app('view')->getFinder()->getPaths();
+
+    expect(end($paths))->toBe(LivewireScreens::path())
+        ->and(config('view.paths'))->toContain(LivewireScreens::path())
+        ->and(app('view')->getFinder()->getHints()['layouts'])->toBe([$application.'/layouts', LivewireScreens::path().'/layouts'])
+        ->and(view('layouts::app')->render())->toBe('layout do aplicativo')
+        ->and(view()->exists('auth.login'))->toBeTrue();
 });

@@ -55,6 +55,33 @@ const FOUNDATION_FORBIDDEN_PREFIXES = [
 ];
 
 /**
+ * Exceção (#72, revisada; separação limpa na #82): as views Livewire do kit
+ * em resources/livewire podem citar ESTES nomes, e só estes. São templates
+ * Blade carregados só em projeto Livewire (que tem auth, accounts e as
+ * classes de suporte do starter), não código PHP que o foundation execute.
+ * Ficam sem namespace, então levá-las depois para o pacote da camada certa
+ * não quebra projeto nenhum. Nome novo aqui, ou qualquer citação para cima
+ * fora desse diretório, continua reprovando.
+ */
+const FOUNDATION_LIVEWIRE_VIEWS_DIRECTORY = 'resources/livewire/';
+
+const FOUNDATION_LIVEWIRE_VIEWS_ALLOWED = [
+    'App\\Livewire\\Account\\Show',
+    'App\\Livewire\\Concerns\\ConfirmsSensitiveAction',
+    'App\\Livewire\\Support\\AccountMenu',
+    'App\\Livewire\\Support\\Navigation',
+    'App\\Livewire\\Support\\SiteLinks',
+    'Twstec\\Kit\\Accounts\\Account\\Enums\\AccountRole',
+    'Twstec\\Kit\\Accounts\\Account\\Enums\\InvitationStatus',
+    'Twstec\\Kit\\Accounts\\ApiKeys\\Enums\\ApiKeyStatus',
+    'Twstec\\Kit\\Auth\\Contracts\\AuthUser',
+    'Twstec\\Kit\\Auth\\PasswordPolicy',
+    'Twstec\\Kit\\Auth\\Support\\LoginPrefill',
+    'Twstec\\Kit\\Auth\\Support\\Registration',
+    'Twstec\\Kit\\Auth\\Support\\TwoFactorRequirement',
+];
+
+/**
  * Pastas do pacote que vão para a aplicação de quem instala.
  */
 const FOUNDATION_SHIPPED_DIRECTORIES = ['src', 'config', 'database', 'lang', 'resources'];
@@ -105,7 +132,13 @@ function foundationForbiddenReferences(): array
                 $names = foundationClassNamesIn($file->getContents());
             }
 
-            $forbidden = array_values(array_filter($names, function (string $name): bool {
+            $isLivewireView = str_starts_with($path, FOUNDATION_LIVEWIRE_VIEWS_DIRECTORY) && str_ends_with($path, '.blade.php');
+
+            $forbidden = array_values(array_filter($names, function (string $name) use ($isLivewireView): bool {
+                if ($isLivewireView && in_array($name, FOUNDATION_LIVEWIRE_VIEWS_ALLOWED, true)) {
+                    return false;
+                }
+
                 foreach (FOUNDATION_FORBIDDEN_PREFIXES as $prefix) {
                     if (str_starts_with($name, $prefix)) {
                         return true;
@@ -241,6 +274,20 @@ it('não nomeia nada do aplicativo nem das camadas de cima', function (): void {
     }
 
     expect($violations)->toBe([]);
+});
+
+it('a exceção das views Livewire não guarda nome que ninguém usa', function (): void {
+    $cited = [];
+
+    foreach ((new Finder)->files()->in(foundationRoot().'/'.FOUNDATION_LIVEWIRE_VIEWS_DIRECTORY)->name('*.blade.php') as $file) {
+        foreach (FOUNDATION_LIVEWIRE_VIEWS_ALLOWED as $name) {
+            if (preg_match('/\b'.str_replace('\\\\', '\\\\+', preg_quote($name, '/')).'\b/', $file->getContents()) === 1) {
+                $cited[$name] = true;
+            }
+        }
+    }
+
+    expect(array_values(array_diff(FOUNDATION_LIVEWIRE_VIEWS_ALLOWED, array_keys($cited))))->toBe([]);
 });
 
 it('declara todo módulo do pacote, uma vez só', function (): void {

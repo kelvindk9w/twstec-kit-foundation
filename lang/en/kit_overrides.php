@@ -6,7 +6,7 @@ declare(strict_types=1);
 
 return [
 
-    'none' => 'No application file overrides kit texts, e-mails or settings: the package defaults apply.',
+    'none' => 'No application file overrides kit texts, e-mails, settings or screens: the package defaults apply.',
     'copy' => 'same as the kit default — safe to delete',
     'customized' => '{1} customizes 1 key: :keys|[2,*] customizes :count keys: :keys',
     'same' => '{1} 1 key equal to the default can go|[2,*] :count keys equal to the default can go',

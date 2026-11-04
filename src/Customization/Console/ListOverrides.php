@@ -10,13 +10,14 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Twstec\Kit\Foundation\Customization\PackageConfig;
 use Twstec\Kit\Foundation\Customization\PackageViews;
+use Twstec\Kit\Foundation\Customization\ReactScreens;
 use Twstec\Kit\Foundation\Localization\PackageTranslations;
 
 /**
  * `php artisan kit:overrides` — o que o aplicativo sobrescreve do kit.
  *
- * O padrão das traduções, dos e-mails e das configurações do kit mora nos
- * pacotes; o aplicativo só precisa do arquivo se mudar algo. Projetos criados
+ * O padrão das traduções, dos e-mails, das configurações e das telas do kit
+ * mora nos pacotes; o aplicativo só precisa do arquivo se mudar algo. Projetos criados
  * antes disso têm CÓPIAS completas, e cópia parada impede a atualização de
  * chegar (o arquivo do aplicativo vence). Este comando compara cada arquivo do
  * aplicativo que tem padrão no kit com esse padrão e diz:
@@ -27,16 +28,19 @@ use Twstec\Kit\Foundation\Localization\PackageTranslations;
  *   - chaves que o kit não tem  → do próprio aplicativo (ficam). Arquivo só
  *                                 com chaves do aplicativo nem aparece.
  *
+ * Views (e-mails e telas Blade) e telas React (resources/js) são comparadas
+ * pelo conteúdo inteiro: iguais ao padrão ou personalizadas.
+ *
  * Não altera nada.
  */
-#[AsCommand(name: 'kit:overrides', description: 'Lista os arquivos do aplicativo que sobrescrevem textos, e-mails e configurações do kit (e quais são só cópias)')]
+#[AsCommand(name: 'kit:overrides', description: 'Lista os arquivos do aplicativo que sobrescrevem textos, e-mails, configurações e telas do kit (e quais são só cópias)')]
 final class ListOverrides extends Command
 {
     protected $signature = 'kit:overrides';
 
     public function handle(): int
     {
-        $rows = [...$this->translations(), ...$this->configs(), ...$this->views()];
+        $rows = [...$this->translations(), ...$this->configs(), ...$this->views(), ...$this->reactScreens()];
 
         if ($rows === []) {
             $this->components->info(__('kit_overrides.none'));
@@ -161,13 +165,49 @@ final class ListOverrides extends Command
                     continue;
                 }
 
-                $rows[] = ['resources/views/'.$relative, $this->normalize((string) file_get_contents($file)) === $this->normalize($packageFile->getContents())
+                $rows[] = ['resources/views/'.$relative, $this->sameContents($file, $packageFile->getContents())
                     ? '<fg=green>'.__('kit_overrides.copy').'</>'
                     : '<fg=yellow>'.__('kit_overrides.customized_view').'</>'];
             }
         }
 
         return $rows;
+    }
+
+    /**
+     * As telas React do kit (ReactScreens) que o aplicativo tem no mesmo
+     * caminho em resources/js.
+     *
+     * @return list<array{string, string}>
+     */
+    private function reactScreens(): array
+    {
+        $rows = [];
+        $path = ReactScreens::path();
+
+        if (! is_dir($path) || ! is_dir(resource_path('js'))) {
+            return [];
+        }
+
+        foreach (File::allFiles($path) as $packageFile) {
+            $relative = $packageFile->getRelativePathname();
+            $file = resource_path('js/'.$relative);
+
+            if (! is_file($file)) {
+                continue;
+            }
+
+            $rows[] = ['resources/js/'.$relative, $this->sameContents($file, $packageFile->getContents())
+                ? '<fg=green>'.__('kit_overrides.copy').'</>'
+                : '<fg=yellow>'.__('kit_overrides.customized_view').'</>'];
+        }
+
+        return $rows;
+    }
+
+    private function sameContents(string $file, string $packageContents): bool
+    {
+        return $this->normalize((string) file_get_contents($file)) === $this->normalize($packageContents);
     }
 
     /**

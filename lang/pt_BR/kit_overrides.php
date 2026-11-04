@@ -6,7 +6,7 @@ declare(strict_types=1);
 
 return [
 
-    'none' => 'Nenhum arquivo do aplicativo sobrescreve textos, e-mails ou configurações do kit: vale o padrão dos pacotes.',
+    'none' => 'Nenhum arquivo do aplicativo sobrescreve textos, e-mails, configurações ou telas do kit: vale o padrão dos pacotes.',
     'copy' => 'igual ao padrão do kit — pode apagar',
     'customized' => '{1} personaliza 1 chave: :keys|[2,*] personaliza :count chaves: :keys',
     'same' => '{1} 1 chave igual ao padrão pode sair|[2,*] :count chaves iguais ao padrão podem sair',
