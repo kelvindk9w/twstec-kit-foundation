@@ -149,7 +149,9 @@ php artisan migrate
   vale nas rotas que o declaram; a poda `idempotency:prune` das chaves
   vencidas entra no agendador sozinha, de hora em hora
   (`IDEMPOTENCY_PRUNE_SCHEDULE`; vazio desliga, com aviso no log).
-- **Comandos** `audit:prune`, `outbound-http:prune` e `idempotency:prune`.
+- **Comandos** `audit:prune`, `outbound-http:prune`, `idempotency:prune` e
+  `db:check-roles` (confere a separação dos papéis do PostgreSQL — ver
+  [docs/producao.md](https://github.com/kelvindk9w/tws-laravel-starter-kit/blob/desenvolvimento/docs/producao.md#papéis-do-postgresql-migração--aplicação)).
 
 ## O que o aplicativo liga
 
