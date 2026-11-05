@@ -39,7 +39,7 @@ final class ApplicationRolePrivileges
             throw new RuntimeException('Separação de papéis: a conexão da aplicação não tem usuário (DB_USERNAME).');
         }
 
-        $this->ensureRole($owner, $role, $password);
+        LoginRole::ensure($owner, $role, $password, 'o papel da aplicação (DB_USERNAME)');
 
         $quotedRole = self::identifier($role);
         $schema = (string) $owner->scalar('SELECT current_schema()');
@@ -57,12 +57,12 @@ final class ApplicationRolePrivileges
 
             $migrations = (string) config('database.migrations.table', 'migrations');
 
-            if ($this->tableExists($owner, $migrations, $schema)) {
+            if (self::tableExists($owner, $migrations, $schema)) {
                 $owner->statement('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER ON TABLE '.self::qualified($migrations, $schema)." FROM {$quotedRole}");
             }
 
             foreach (AppendOnlyTables::all() as $table => $definition) {
-                if (! $this->tableExists($owner, $table, $schema)) {
+                if (! self::tableExists($owner, $table, $schema)) {
                     continue;
                 }
 
@@ -79,33 +79,10 @@ final class ApplicationRolePrivileges
         });
     }
 
-    private function ensureRole(Connection $owner, string $role, string $password): void
-    {
-        $me = $owner->selectOne('SELECT rolsuper, rolcreaterole FROM pg_roles WHERE rolname = current_user');
-        $superuser = (bool) ($me->rolsuper ?? false);
-        $canCreate = $superuser || (bool) ($me->rolcreaterole ?? false);
-        $exists = $owner->selectOne('SELECT 1 AS ok FROM pg_roles WHERE rolname = ?', [$role]) !== null;
-        $quotedRole = self::identifier($role);
-        $passwordClause = $password !== '' ? ' PASSWORD '.$owner->getPdo()->quote($password) : '';
-
-        if (! $exists) {
-            if (! $canCreate || $password === '') {
-                throw new RuntimeException(sprintf(
-                    'Separação de papéis: o papel da aplicação "%s" não existe no PostgreSQL e o papel de migração não pode criá-lo%s. Crie-o antes (docs/producao.md, "Papéis do PostgreSQL") e rode o migrate de novo.',
-                    $role,
-                    $password === '' ? ' (DB_PASSWORD vazio)' : ' (sem CREATEROLE)',
-                ));
-            }
-
-            $owner->statement("CREATE ROLE {$quotedRole} LOGIN".$passwordClause);
-        }
-
-        if ($superuser) {
-            $owner->statement("ALTER ROLE {$quotedRole} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS".$passwordClause);
-        }
-    }
-
-    private function tableExists(Connection $owner, string $table, string $schema): bool
+    /**
+     * A tabela existe (no esquema dado, se o nome não trouxer outro)?
+     */
+    public static function tableExists(Connection $owner, string $table, string $schema): bool
     {
         return $owner->scalar('SELECT to_regclass(?) IS NOT NULL', [self::qualified($table, $schema)]) === true;
     }

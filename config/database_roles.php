@@ -18,6 +18,12 @@ declare(strict_types=1);
 //   acertando os privilégios do papel da aplicação (cria o papel se faltar e
 //   o dono puder). Vazio = sem separação: tudo roda com o papel da aplicação,
 //   como antes — e o `php artisan db:check-roles` aponta.
+// - Papel de MANUTENÇÃO (opcional): o das podas (DB_MAINTENANCE_USERNAME /
+//   DB_MAINTENANCE_PASSWORD). Com ele definido, as podas das trilhas rodam
+//   com ele — que só lê e apaga nas trilhas com poda — em vez do dono, e o
+//   processo que as agenda (o scheduler) não recebe a senha do dono. Todo
+//   `migrate` (com o papel de migração e este definidos) cria o papel se
+//   faltar e acerta os privilégios dele; o `db:check-roles` confere.
 // =============================================================================
 
 return [
@@ -34,7 +40,9 @@ return [
 
     // Comandos que rodam com o papel de migração (quando há separação) se
     // não receberem `--database`. As podas apagam de tabelas só-acréscimo,
-    // em que o papel da aplicação não tem DELETE.
+    // em que o papel da aplicação não tem DELETE — com o papel de manutenção
+    // definido, elas vão para ele (maintenance_commands, que vence esta
+    // lista).
     'migration_commands' => [
         'migrate',
         'migrate:fresh',
@@ -48,6 +56,27 @@ return [
         'audit:prune',
         'outbound-http:prune',
     ],
+
+    'maintenance' => [
+        'username' => env('DB_MAINTENANCE_USERNAME'),
+        'password' => env('DB_MAINTENANCE_PASSWORD'),
+    ],
+
+    // Nome da conexão de manutenção (mesma regra da de migração).
+    'maintenance_connection' => 'maintenance',
+
+    // Comandos que rodam com o papel de manutenção, quando ele está definido,
+    // se não receberem `--database`.
+    'maintenance_commands' => [
+        'audit:prune',
+        'outbound-http:prune',
+    ],
+
+    // Tabelas DO PROJETO que uma poda dele apaga com o papel de manutenção
+    // (SELECT e DELETE; ponha o comando da poda em maintenance_commands). As
+    // do kit (audit_events, outbound_http_logs) não saem. Nenhuma outra
+    // tabela do esquema dá privilégio a esse papel.
+    'maintenance_tables' => [],
 
     // TABELAS SÓ-ACRÉSCIMO DO PROJETO, somadas às do kit (audit_events,
     // request_logs, outbound_http_logs — essas não saem). O papel da

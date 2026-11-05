@@ -25,6 +25,15 @@ use Illuminate\Support\ConfigurationUrlParser;
  *   privilégios do papel da aplicação (ApplicationRolePrivileges).
  *
  * Sem separação, nada muda: tudo roda com a conexão padrão.
+ *
+ * PAPEL DE MANUTENÇÃO (opcional, DB_MAINTENANCE_USERNAME): com ele definido
+ * (PostgreSQL, diferente do papel da aplicação e do de migração), os
+ * comandos de `database_roles.maintenance_commands` (as podas) rodam com a
+ * conexão de manutenção — que só apaga nas trilhas com poda — e não com a do
+ * dono; o processo que as agenda (o scheduler) não precisa da senha do dono.
+ * Todo `migrate` com o papel definido também acerta os privilégios dele
+ * (MaintenanceRolePrivileges). Sem ele, as podas continuam com o papel de
+ * migração, como antes.
  */
 final class DatabaseRoles
 {
@@ -32,7 +41,10 @@ final class DatabaseRoles
      * O papel da aplicação enquanto um comando roda com a conexão de
      * migração: [conexão padrão anterior, usuário dela].
      *
-     * @var list<array{string, string}>
+     * O comando que desviou vai junto, para o fim de um comando que NÃO foi
+     * desviado (com `--database`) não devolver a conexão de outro.
+     *
+     * @var list<array{0: string, 1: string, 2: string}>
      */
     private array $routed = [];
 
@@ -57,6 +69,28 @@ final class DatabaseRoles
     public function migrationUsername(): string
     {
         return trim((string) config('database_roles.migration.username', ''));
+    }
+
+    public function maintenanceUsername(): string
+    {
+        return trim((string) config('database_roles.maintenance.username', ''));
+    }
+
+    /**
+     * O papel de manutenção está definido neste processo? (PostgreSQL, e
+     * diferente do papel da aplicação e do de migração.)
+     */
+    public function maintenanceConfigured(): bool
+    {
+        if (config('database.connections.'.$this->applicationConnectionName().'.driver') !== 'pgsql') {
+            return false;
+        }
+
+        $maintenance = $this->maintenanceUsername();
+
+        return $maintenance !== ''
+            && $maintenance !== $this->applicationRole()
+            && $maintenance !== $this->migrationUsername();
     }
 
     /**
@@ -104,21 +138,40 @@ final class DatabaseRoles
     }
 
     /**
-     * CommandStarting: desvia para a conexão de migração os comandos da
-     * lista que não escolheram a conexão.
+     * A conexão de manutenção, montada como a de migração (a do aplicativo,
+     * se o config/database.php a definir; senão, a da aplicação com o
+     * usuário e a senha de manutenção).
+     */
+    public function maintenanceConnectionName(): string
+    {
+        $name = (string) config('database_roles.maintenance_connection', 'maintenance');
+
+        if (config("database.connections.{$name}") === null) {
+            $config = $this->resolvedConfig($this->applicationConnectionName());
+            $config['username'] = $this->maintenanceUsername();
+            $config['password'] = (string) config('database_roles.maintenance.password', '');
+
+            config(["database.connections.{$name}" => $config]);
+        }
+
+        return $name;
+    }
+
+    /**
+     * CommandStarting: desvia os comandos das listas que não escolheram a
+     * conexão — as podas para a de manutenção (se definida), o resto para a
+     * de migração.
      */
     public function commandStarting(CommandStarting $event): void
     {
-        if (! $this->shouldRoute($event)) {
+        $target = $this->routeFor($event);
+
+        if ($target === null) {
             return;
         }
 
-        $previous = $this->applicationConnectionName();
-        $role = $this->applicationRole();
-        $migration = $this->migrationConnectionName();
-
-        $this->routed[] = [$previous, $role];
-        $this->db->setDefaultConnection($migration);
+        $this->routed[] = [$this->applicationConnectionName(), $this->applicationRole(), (string) $event->command];
+        $this->db->setDefaultConnection($target);
     }
 
     /**
@@ -126,12 +179,14 @@ final class DatabaseRoles
      */
     public function commandFinished(CommandFinished $event): void
     {
-        if (! $this->isRoutable($event->command) || $this->routed === []) {
+        $last = end($this->routed);
+
+        if ($last === false || $last[2] !== $event->command) {
             return;
         }
 
-        [$previous] = array_pop($this->routed);
-        $this->db->setDefaultConnection($previous);
+        array_pop($this->routed);
+        $this->db->setDefaultConnection($last[0]);
     }
 
     /**
@@ -149,29 +204,49 @@ final class DatabaseRoles
         }
 
         $applicationConnection = $this->applicationConnectionName();
+        $owner = $this->db->connection($this->migrationConnectionName());
 
         app(ApplicationRolePrivileges::class)->sync(
-            $this->db->connection($this->migrationConnectionName()),
+            $owner,
             $this->applicationRole(),
             (string) ($this->resolvedConfig($applicationConnection)['password'] ?? ''),
         );
+
+        if ($this->maintenanceConfigured()) {
+            app(MaintenanceRolePrivileges::class)->sync(
+                $owner,
+                $this->maintenanceUsername(),
+                (string) config('database_roles.maintenance.password', ''),
+            );
+        }
     }
 
-    private function shouldRoute(CommandStarting $event): bool
+    /**
+     * A conexão para onde o comando vai, ou null (fica na padrão).
+     */
+    private function routeFor(CommandStarting $event): ?string
     {
-        if (! $this->isRoutable($event->command) || ! $this->separated()) {
-            return false;
-        }
+        $command = (string) $event->command;
 
         // `--database` explícito: quem chamou escolheu.
-        return ! ($event->input->hasOption('database') && filled($event->input->getOption('database')));
+        if ($event->input->hasOption('database') && filled($event->input->getOption('database'))) {
+            return null;
+        }
+
+        if ($this->inList('database_roles.maintenance_commands', $command) && $this->maintenanceConfigured()) {
+            return $this->maintenanceConnectionName();
+        }
+
+        if ($this->inList('database_roles.migration_commands', $command) && $this->separated()) {
+            return $this->migrationConnectionName();
+        }
+
+        return null;
     }
 
-    private function isRoutable(?string $command): bool
+    private function inList(string $key, string $command): bool
     {
-        $commands = (array) config('database_roles.migration_commands', []);
-
-        return $command !== null && in_array($command, $commands, true);
+        return in_array($command, (array) config($key, []), true);
     }
 
     /**

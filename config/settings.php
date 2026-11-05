@@ -23,8 +23,18 @@ return [
     // Chave do cache das sobreposições (invalidada a cada escrita).
     'cache_key' => 'settings.db_overrides',
 
-    // Chave da tabela settings => [tipo, limites de UI, grupo e largura].
+    // Chave da tabela settings => [tipo, limites, grupo e largura].
     // As labels das telas vivem em lang/*/admin.php (toda string via __()).
+    //
+    // `type`   int (com `min` e `max`), bool (liga/desliga), enum (um dos
+    //          valores de `options`) ou string (texto curto: `max_length`,
+    //          padrão 255, e `pattern` opcional, uma regex). Valor fora do
+    //          tipo é recusado no servidor (SettingsManager). Exemplos:
+    //            'app.maintenance_banner' => ['type' => 'bool', 'group' => 'other'],
+    //            'mail.default' => ['type' => 'enum', 'options' => ['smtp', 'log'], 'group' => 'other'],
+    //            'platform.support_url' => ['type' => 'string', 'max_length' => 120, 'pattern' => '#^https://#', 'group' => 'other'],
+    //          Rótulo de cada opção do enum (opcional):
+    //          admin.settings.option_<campo>_<valor> em lang/*/admin.php.
     //
     // `group`  agrupa os campos por ASSUNTO na tela (uma lista plana de seis
     //          números não diz a ninguém o que é de quê);

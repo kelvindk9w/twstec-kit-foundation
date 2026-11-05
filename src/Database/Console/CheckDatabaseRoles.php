@@ -9,13 +9,18 @@ use Illuminate\Database\DatabaseManager;
 use Throwable;
 use Twstec\Kit\Foundation\Database\AppendOnlyTables;
 use Twstec\Kit\Foundation\Database\DatabaseRoles;
+use Twstec\Kit\Foundation\Database\MaintenanceRoleInspection;
+use Twstec\Kit\Foundation\Database\MaintenanceTables;
 use Twstec\Kit\Foundation\Database\RoleInspection;
 
 /**
  * Confere o papel com que a APLICAÇÃO entra no PostgreSQL (RoleInspection):
  * sai com erro se ele for superusuário, dono do banco, do esquema ou de uma
  * tabela só-acréscimo, se puder criar objetos no esquema ou se tiver
- * privilégio proibido numa tabela registrada (AppendOnlyTables).
+ * privilégio proibido numa tabela registrada (AppendOnlyTables). Com o papel
+ * de manutenção definido (DB_MAINTENANCE_USERNAME), confere também ele
+ * (MaintenanceRoleInspection): existe, não é dono de nada e só tem os
+ * privilégios das podas.
  *
  * Para o deploy (depois do migrate, com as credenciais da aplicação) e para
  * o monitoramento: código 0 = tudo certo; 1 = problema (a lista sai na
@@ -28,7 +33,7 @@ final class CheckDatabaseRoles extends Command
 
     protected $description = 'Confere se o papel da aplicação no PostgreSQL não é dono do esquema nem tem privilégio proibido nas tabelas só-acréscimo';
 
-    public function handle(DatabaseManager $db, RoleInspection $inspection, DatabaseRoles $roles): int
+    public function handle(DatabaseManager $db, RoleInspection $inspection, MaintenanceRoleInspection $maintenance, DatabaseRoles $roles): int
     {
         $name = (string) ($this->option('connection') ?: config('database.default'));
 
@@ -49,6 +54,8 @@ final class CheckDatabaseRoles extends Command
 
             $problems = $inspection->problems($connection);
             $role = (string) $connection->scalar('SELECT current_user');
+            $maintenanceRole = $roles->maintenanceConfigured() ? $roles->maintenanceUsername() : null;
+            $maintenanceProblems = $maintenanceRole !== null ? $maintenance->problems($connection, $maintenanceRole) : [];
         } catch (Throwable $exception) {
             $this->error(__('database_roles.unreachable', ['connection' => $name, 'error' => $exception->getMessage()]));
 
@@ -61,7 +68,17 @@ final class CheckDatabaseRoles extends Command
             foreach ($problems as [$code, $details]) {
                 $this->line('  - '.__("database_roles.problems.{$code}", $details));
             }
+        }
 
+        if ($maintenanceProblems !== []) {
+            $this->error(__('database_roles.maintenance.failed', ['role' => (string) $maintenanceRole, 'count' => count($maintenanceProblems)]));
+
+            foreach ($maintenanceProblems as [$code, $details]) {
+                $this->line('  - '.__("database_roles.maintenance.problems.{$code}", $details));
+            }
+        }
+
+        if ($problems !== [] || $maintenanceProblems !== []) {
             $this->line(__('database_roles.how_to_fix'));
 
             return self::FAILURE;
@@ -72,6 +89,13 @@ final class CheckDatabaseRoles extends Command
             'role' => $role,
             'tables' => implode(', ', array_keys(AppendOnlyTables::all())),
         ]));
+
+        if ($maintenanceRole !== null) {
+            $this->info(__('database_roles.maintenance.passed', [
+                'role' => $maintenanceRole,
+                'tables' => implode(', ', array_keys(MaintenanceTables::all())),
+            ]));
+        }
 
         return self::SUCCESS;
     }

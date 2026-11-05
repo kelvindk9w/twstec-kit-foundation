@@ -12,6 +12,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\NullOutput;
 use Twstec\Kit\Foundation\Database\AppendOnlyTables;
 use Twstec\Kit\Foundation\Database\DatabaseRoles;
+use Twstec\Kit\Foundation\Database\MaintenanceTables;
 
 // Separação de papéis no PostgreSQL: o registro das tabelas só-acréscimo, o
 // desvio dos comandos de estrutura para o papel de migração e o
@@ -157,4 +158,119 @@ it('db:check-roles responde com o motivo quando o banco não responde', function
 
     expect(Artisan::call('db:check-roles', ['--connection' => 'fake_pgsql']))->toBe(2)
         ->and(Artisan::output())->toContain('Não foi possível conferir a conexão fake_pgsql');
+});
+
+// -----------------------------------------------------------------------------
+// PAPEL DE MANUTENÇÃO (#65): as podas com um papel que só lê e apaga nas
+// trilhas com poda, sem a senha do dono no processo que as agenda.
+// -----------------------------------------------------------------------------
+
+function useFakeMaintenanceRole(?string $username = 'maint_role'): void
+{
+    config([
+        'database_roles.maintenance.username' => $username,
+        'database_roles.maintenance.password' => 'maint-secret',
+    ]);
+}
+
+it('o pacote traz a configuração do papel de manutenção com as podas do kit e nenhuma tabela do projeto', function (): void {
+    expect(config('database_roles.maintenance_connection'))->toBe('maintenance')
+        ->and(config('database_roles.maintenance_commands'))->toBe(['audit:prune', 'outbound-http:prune'])
+        ->and(config('database_roles.maintenance_tables'))->toBe([])
+        ->and(config('database_roles.maintenance.username'))->toBeNull();
+});
+
+it('o registro das podas: as trilhas do kit com SELECT e DELETE (INSERT só onde a poda grava o rastro) e as do projeto só com SELECT e DELETE', function (): void {
+    config(['database_roles.maintenance_tables' => ['webhook_deliveries', 'audit_events']]);
+
+    expect(MaintenanceTables::all())->toBe([
+        'audit_events' => ['SELECT', 'INSERT', 'DELETE'],
+        'outbound_http_logs' => ['SELECT', 'DELETE'],
+        'webhook_deliveries' => ['SELECT', 'DELETE'],
+    ]);
+});
+
+it('recusa nome de tabela inválido na lista de podas do projeto', function (mixed $declared): void {
+    config(['database_roles.maintenance_tables' => $declared]);
+
+    MaintenanceTables::all();
+})->with([
+    'com espaço' => [['web hooks']],
+    'com aspas' => [['x"; DROP TABLE y; --']],
+    'com esquema' => [['outro.tabela']],
+    'não é lista' => ['audit_events'],
+])->throws(InvalidArgumentException::class);
+
+it('com o papel de manutenção, as podas vão para a conexão de manutenção e o migrate continua no dono', function (string $command): void {
+    useFakePgsqlApplication();
+    useFakeMaintenanceRole();
+    $roles = app(DatabaseRoles::class);
+
+    $roles->commandStarting(commandEvent(CommandStarting::class, $command));
+
+    expect(DB::getDefaultConnection())->toBe('maintenance')
+        ->and(config('database.connections.maintenance.username'))->toBe('maint_role')
+        ->and(config('database.connections.maintenance.password'))->toBe('maint-secret')
+        ->and(config('database.connections.maintenance.host'))->toBe('db.invalid')
+        ->and($roles->applicationRole())->toBe('app_role');
+
+    $roles->commandFinished(commandEvent(CommandFinished::class, $command));
+    expect(DB::getDefaultConnection())->toBe('fake_pgsql');
+
+    $roles->commandStarting(commandEvent(CommandStarting::class, 'migrate'));
+    expect(DB::getDefaultConnection())->toBe('migration');
+    $roles->commandFinished(commandEvent(CommandFinished::class, 'migrate'));
+})->with(['audit:prune', 'outbound-http:prune']);
+
+it('o scheduler sem a senha do dono: com só o papel de manutenção, as podas vão para ele e nada vai para o dono', function (): void {
+    useFakePgsqlApplication(migrationUser: null);
+    useFakeMaintenanceRole();
+    $roles = app(DatabaseRoles::class);
+
+    expect($roles->separated())->toBeFalse()
+        ->and($roles->maintenanceConfigured())->toBeTrue();
+
+    $roles->commandStarting(commandEvent(CommandStarting::class, 'audit:prune'));
+    expect(DB::getDefaultConnection())->toBe('maintenance');
+    $roles->commandFinished(commandEvent(CommandFinished::class, 'audit:prune'));
+
+    $roles->commandStarting(commandEvent(CommandStarting::class, 'migrate'));
+    expect(DB::getDefaultConnection())->toBe('fake_pgsql');
+});
+
+it('sem papel de manutenção (ou igual ao da aplicação ou ao do dono), as podas continuam com o papel de migração', function (?string $maintenance): void {
+    useFakePgsqlApplication();
+    useFakeMaintenanceRole($maintenance);
+    $roles = app(DatabaseRoles::class);
+
+    expect($roles->maintenanceConfigured())->toBeFalse();
+
+    $roles->commandStarting(commandEvent(CommandStarting::class, 'audit:prune'));
+    expect(DB::getDefaultConnection())->toBe('migration');
+})->with([
+    'vazio' => [''],
+    'nulo' => [null],
+    'igual ao da aplicação' => ['app_role'],
+    'igual ao do dono' => ['owner_role'],
+]);
+
+it('o papel de manutenção não vale fora do PostgreSQL', function (): void {
+    useFakeMaintenanceRole();
+
+    expect(app(DatabaseRoles::class)->maintenanceConfigured())->toBeFalse(); // SQLite dos testes
+});
+
+it('o fim de um comando que não foi desviado não devolve a conexão de outro que ainda roda', function (): void {
+    useFakePgsqlApplication();
+    useFakeMaintenanceRole();
+    $roles = app(DatabaseRoles::class);
+
+    $roles->commandStarting(commandEvent(CommandStarting::class, 'migrate'));
+    $roles->commandStarting(commandEvent(CommandStarting::class, 'audit:prune', 'migration'));
+    $roles->commandFinished(commandEvent(CommandFinished::class, 'audit:prune', 'migration'));
+
+    expect(DB::getDefaultConnection())->toBe('migration');
+
+    $roles->commandFinished(commandEvent(CommandFinished::class, 'migrate'));
+    expect(DB::getDefaultConnection())->toBe('fake_pgsql');
 });

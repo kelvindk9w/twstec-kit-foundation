@@ -11,7 +11,27 @@ return [
     'unreachable' => 'Could not check connection :connection: :error',
     'failed' => 'Role :role (connection :connection) has :count role separation problem(s):',
     'passed' => 'Role :role (connection :connection) does not own the schema and has no forbidden privilege on the append-only tables (:tables).',
-    'how_to_fix' => 'Run the migrations with the migration role (DB_MIGRATION_USERNAME), which sets the application role privileges, or apply the SQL in docs/producao.md ("Papéis do PostgreSQL").',
+    'how_to_fix' => 'Run the migrations with the migration role (DB_MIGRATION_USERNAME), which sets the application and maintenance role privileges, or apply the SQL in docs/producao.md ("Papéis do PostgreSQL").',
+
+    'maintenance' => [
+        'failed' => 'The maintenance role :role has :count problem(s): it may only read and delete on the pruned trails.',
+        'passed' => 'The maintenance role :role owns nothing and only reads and deletes on the pruned trails (:tables).',
+        'problems' => [
+            'missing' => 'The maintenance role :role does not exist: run the migrations with DB_MAINTENANCE_USERNAME and DB_MAINTENANCE_PASSWORD set, which create it.',
+            'superuser' => ':role is a superuser.',
+            'createrole' => ':role can create roles (CREATEROLE).',
+            'createdb' => ':role can create databases (CREATEDB).',
+            'bypassrls' => ':role bypasses Row-Level Security (BYPASSRLS).',
+            'owns_database' => ':role owns the :database database.',
+            'owns_schema' => ':role owns the :schema schema.',
+            'schema_create' => ':role can create objects in the :schema schema (CREATE).',
+            'owns_table' => ':role owns the :table table.',
+            'extra_privilege' => ':role has :privilege on the :table table, beyond what pruning needs.',
+            'missing_privilege' => ':role lacks :privilege on the :table table: pruning would fail.',
+            'column_update' => ':role can update columns of the :table table.',
+            'table_missing' => 'The pruned table :table does not exist (run the migrations or check database_roles.maintenance_tables).',
+        ],
+    ],
 
     'problems' => [
         'superuser' => ':role is a superuser: it bypasses every privilege and can disable the trail triggers.',

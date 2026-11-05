@@ -415,9 +415,12 @@ final class HandleIdempotencyKey
     }
 
     /**
+     * Os métodos em que a chave é lida (`idempotency.methods`, padrão
+     * POST e PATCH); nos outros, o middleware não faz nada.
+     *
      * @return list<string>
      */
-    private static function methods(): array
+    public static function methods(): array
     {
         return array_values(array_map(
             static fn (mixed $method): string => strtoupper((string) $method),

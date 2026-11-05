@@ -7,6 +7,7 @@ use Illuminate\Auth\GenericUser;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Log\Events\MessageLogged;
@@ -49,6 +50,8 @@ $GLOBALS['idemLogLines'] = [];
 
 beforeEach(function (): void {
     $GLOBALS['idemLogLines'] = [];
+    $GLOBALS['idemExecutions'] = 0;
+    $GLOBALS['idemDeadlocks'] = 0;
 
     // A resposta guardada é cifrada com a APP_KEY. A aplicação mínima do
     // Testbench não tem uma (no CI não há .env; no container de dev, a do .env
@@ -92,6 +95,16 @@ beforeEach(function (): void {
         }
 
         $id = DB::table('idem_test_orders')->insertGetId(['tenant' => $request->header('X-Test-Tenant'), 'item' => $data['item']]);
+
+        // Impasse (deadlock) do banco depois de gravar, só enquanto houver
+        // impasses "programados": a primeira execução cai, a repetição passa.
+        if ($data['item'] === 'impasse') {
+            $GLOBALS['idemExecutions']++;
+
+            if ($GLOBALS['idemDeadlocks']-- > 0) {
+                throw new QueryException(DB::getDefaultConnection(), 'update idem_test_orders set item = ?', ['impasse'], new PDOException('SQLSTATE[40P01]: Deadlock detected: 7 ERROR:  deadlock detected'));
+            }
+        }
 
         // Gravou e DEPOIS falhou (o 5xx chega com a escrita feita).
         if ($data['item'] === 'grava-e-falha') {
@@ -772,6 +785,27 @@ it('modo transactional: 5xx depois de gravar desfaz a escrita e libera a chave',
     // de gravar em transação).
     idemPost(['item' => 'grava-e-falha'], key: IDEM_OTHER_KEY)->assertStatus(503);
     expect(idemOrders())->toBe(1);
+});
+
+it('modo transactional: impasse do banco NÃO é tentado de novo no servidor — desfaz, libera a chave, e a repetição do cliente com a mesma chave executa uma vez', function (): void {
+    $GLOBALS['idemDeadlocks'] = 1;
+
+    // A transação do middleware é a de fora: o impasse sobe sem nova
+    // tentativa (o Laravel só repete a transação de nível 1, e a rota roda
+    // dentro dela). Nada fica gravado e a chave é liberada.
+    idemPost(['item' => 'impasse'], uri: '/api/pedidos-atomicos')->assertStatus(500);
+
+    expect($GLOBALS['idemExecutions'])->toBe(1)
+        ->and(idemOrders())->toBe(0)
+        ->and(DB::table(IdempotencyStore::TABLE)->count())->toBe(0);
+
+    // O tratamento é do cliente: repetir com a MESMA chave é seguro.
+    $retry = idemPost(['item' => 'impasse'], uri: '/api/pedidos-atomicos');
+    $retry->assertCreated()->assertHeaderMissing('Idempotent-Replayed');
+    idemPost(['item' => 'impasse'], uri: '/api/pedidos-atomicos')->assertHeader('Idempotent-Replayed', 'true');
+
+    expect($GLOBALS['idemExecutions'])->toBe(2)
+        ->and(idemOrders())->toBe(1);
 });
 
 it('modo transactional: execução abandonada é retomada depois de IDEMPOTENCY_LOCK_SECONDS (nada foi confirmado)', function (): void {
