@@ -96,6 +96,22 @@ it('não mascara números que não são cartão', function (string $input) {
     'valor e data' => ['R$ 1.990,00 em 23/09/2026'],
 ]);
 
+it('não mascara UUIDs, mesmo quando os grupos de dígitos emendados passam no Luhn', function (string $input) {
+    expect((new Redactor)->redactString($input))->toBe($input)
+        ->and((new Redactor)->maskCardNumbers($input))->toBe($input)
+        ->and((new Redactor)->redactArray(['endpoint' => ['after' => $input]]))->toBe(['endpoint' => ['after' => $input]]);
+})->with([
+    // "9492-611262858": 13 dígitos que passam no Luhn.
+    'grupos finais só de dígitos' => ['01a1b1d5-a951-7366-9492-611262858b78'],
+    'maiúsculo, no meio do texto' => ['entrega 01A1B1D5-A951-7366-9492-611262858B78 reenviada'],
+    'UUID inteiro só de dígitos' => ['12345678-1234-1234-1234-123456789012'],
+]);
+
+it('cartão ao lado de um UUID continua mascarado', function () {
+    expect((new Redactor)->redactString('01a1b1d5-a951-7366-9492-611262858b78 4111 1111 1111 1111'))
+        ->toBe('01a1b1d5-a951-7366-9492-611262858b78 **** **** **** 1111');
+});
+
 it('CPF e CNPJ seguem com a máscara de documento, não a de cartão', function () {
     expect((new Redactor)->redactString('CPF 123.456.789-09 cartão 4111 1111 1111 1111'))
         ->toBe('CPF 123.***.***-09 cartão **** **** **** 1111')

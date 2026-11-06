@@ -69,6 +69,12 @@ final class Redactor
     private const PAN_MAX_DIGITS = 19;
 
     /**
+     * Um UUID (8-4-4-4-12 hexadecimais), capturado para o preg_split
+     * devolvê-lo intacto entre os trechos de texto livre.
+     */
+    private const UUID_PATTERN = '/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i';
+
+    /**
      * Dígitos finais que podem permanecer visíveis (PCI DSS 3.4.1: no
      * máximo os 6 primeiros e os 4 últimos; aqui, só os 4 últimos).
      */
@@ -154,14 +160,29 @@ final class Redactor
      * ("4111 1111 1111 1111 123"). O Luhn é o que separa cartão de número de
      * pedido, protocolo ou telefone; ele não é infalível (cerca de 1 em cada
      * 10 sequências arbitrárias passa), e na dúvida mascarar é o lado seguro.
+     *
+     * UUIDs passam intactos: os grupos só de dígitos de um UUID, emendados
+     * pelos hífens ("…-9492-611262858b78"), formam uma corrida de 13+
+     * dígitos que às vezes passa no Luhn, e a auditoria ou o log gravariam o
+     * identificador corrompido. Um UUID nunca é um PAN (32 dígitos
+     * hexadecimais contra no máximo 19 decimais).
      */
     public function maskCardNumbers(string $value): string
     {
-        return (string) preg_replace_callback(
-            '/(?<!\d)\d(?:[ -]?\d){'.(self::PAN_MIN_DIGITS - 1).',}(?!\d)/',
-            fn (array $m): string => $this->maskCardRun($m[0]),
-            $value,
-        );
+        $parts = preg_split(self::UUID_PATTERN, $value, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$value];
+
+        foreach ($parts as $index => $part) {
+            // Índices ímpares são os UUIDs capturados pelo separador.
+            if ($index % 2 === 0) {
+                $parts[$index] = (string) preg_replace_callback(
+                    '/(?<!\d)\d(?:[ -]?\d){'.(self::PAN_MIN_DIGITS - 1).',}(?!\d)/',
+                    fn (array $m): string => $this->maskCardRun($m[0]),
+                    $part,
+                );
+            }
+        }
+
+        return implode('', $parts);
     }
 
     /**
