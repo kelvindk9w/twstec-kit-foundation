@@ -38,7 +38,7 @@ nem interface — e um teste de arquitetura na suíte do pacote garante isso.
 Pelo Packagist:
 
 ```bash
-composer require "twstec/kit-foundation:^2.0@beta"   # durante o beta; na 2.0.0 estável, ^2.0
+composer require "twstec/kit-foundation:~2.0@beta"   # durante o beta; na 2.0.0 estável, ~2.0
 ```
 
 Durante o beta, cada pacote do kit que você requerer leva o `@beta` (ou o
