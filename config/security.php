@@ -470,6 +470,25 @@ return [
         'max_inspected_bytes' => (int) env('SECURITY_VALIDATION_MAX_INSPECTED_BYTES', 1048576),
     ],
 
+    // --- Máscara dos logs (Twstec\Kit\Foundation\Logging\Redactor) -----------
+    // O kit já mascara senhas, tokens, chaves, cartão, CPF/CNPJ, e-mail, dados
+    // pessoais sem formato (telefone, nascimento, conta bancária, chave Pix) e
+    // segredos de provedor em texto livre. Aqui o aplicativo ACRESCENTA os do
+    // domínio dele — nunca tira os do kit. Vale em todos os canais: trilha de
+    // requisições, chamadas de saída, auditoria, webhooks e logs de arquivo.
+    'redaction' => [
+        // Nomes de campo cujo valor vira [REDACTED] (sem diferenciar
+        // maiúsculas). Ex.: payer_name,bank_branch.
+        'keys' => env('SECURITY_REDACTION_KEYS', ''),
+        // Sufixos de nome de campo. Ex.: _document,_account.
+        'suffixes' => env('SECURITY_REDACTION_SUFFIXES', ''),
+        // Expressões regulares PCRE completas (com delimitador) para segredos
+        // em texto livre; o trecho casado vira [REDACTED]. Só pelo arquivo de
+        // configuração do aplicativo (expressão em .env é frágil). Expressão
+        // inválida derruba o boot — melhor que uma máscara que não mascara.
+        'patterns' => [],
+    ],
+
     // --- Pipeline de logs de requisição ----------------------------------------
     'request_logging' => [
         // Rotas excluídas do log pesado em banco: health checks barulhentos e
@@ -513,6 +532,14 @@ return [
         // 0 = sem amostragem (toda 404 volta a gerar linha — só com a borda
         // protegida por outro meio). Ver Twstec\Kit\Foundation\Logging\ScanTrafficSampler.
         'scan_sample_window_seconds' => (int) env('REQUEST_LOG_SCAN_SAMPLE_WINDOW_SECONDS', 60),
+
+        // Cabeçalhos gravados em `request_logs.headers`: lista FECHADA, nomes
+        // separados por vírgula. Os valores passam pelo Redactor; Origin e
+        // Referer perdem a query. Credencial NUNCA entra, mesmo listada
+        // (Authorization, Cookie, X-Api-Key, X-CSRF-Token e qualquer nome que o
+        // Redactor trate como segredo) — ver Logging\RequestHeaderSnapshot.
+        // Vazio = nenhum cabeçalho.
+        'headers' => env('REQUEST_LOG_HEADERS', 'accept,accept-language,content-type,content-length,origin,referer,idempotency-key,x-request-id,x-correlation-id,x-forwarded-proto,x-forwarded-host'),
     ],
 
 ];

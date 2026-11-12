@@ -37,6 +37,7 @@ use Twstec\Kit\Foundation\Idempotency\Middleware\HandleIdempotencyKey;
 use Twstec\Kit\Foundation\Localization\PackageTranslations;
 use Twstec\Kit\Foundation\Logging\CorrelationContext;
 use Twstec\Kit\Foundation\Logging\Middleware\RequestLogging;
+use Twstec\Kit\Foundation\Logging\Redactor;
 use Twstec\Kit\Foundation\Logging\RequestLogChannel;
 use Twstec\Kit\Foundation\Security\ApiRateLimit;
 use Twstec\Kit\Foundation\Security\ClientBucket;
@@ -160,6 +161,11 @@ final class FoundationServiceProvider extends ServiceProvider
 
         // Configuração centralizada da plataforma (nada hardcoded) — singleton tipado.
         $this->app->singleton(Platform::class, fn (): Platform => Platform::fromConfig());
+
+        // Uma só máscara para todos os canais (trilha, chamadas de saída,
+        // auditoria, webhooks, logs de arquivo): as listas do kit + o que o
+        // aplicativo acrescentou em security.redaction (#122).
+        $this->app->singleton(Redactor::class, fn (): Redactor => Redactor::fromConfig());
 
         // `backup:run` com a regra da criptografia na frente: em produção,
         // backup que sairia sem criptografia é RECUSADO (ver

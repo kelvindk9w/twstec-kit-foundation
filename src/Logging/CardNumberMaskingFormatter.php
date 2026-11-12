@@ -19,8 +19,13 @@ use Monolog\LogRecord;
  * texto final cobre mensagem, contexto, extra e exceção de uma vez, qualquer
  * que seja o formatter do canal (linha ou JSON).
  *
- * Só a regra de cartão roda aqui (Redactor::maskCardNumbers): CPF/CNPJ/e-mail
- * continuam sob responsabilidade de quem monta o contexto, como sempre foram.
+ * Na linha final rodam o cartão (Redactor::maskCardNumbers) e os segredos
+ * de provedor em texto livre (Redactor::maskSecrets, #114). Antes de
+ * formatar, o contexto e o `extra` passam pela regra por NOME de campo
+ * (Redactor::redactSensitiveKeys, #122): `password`, `pix_key` ou um nome
+ * que o aplicativo acrescentou em `security.redaction.keys` não saem em
+ * claro. CPF/CNPJ/e-mail em texto continuam sob responsabilidade de quem
+ * monta o contexto, como sempre foram.
  */
 final class CardNumberMaskingFormatter implements FormatterInterface
 {
@@ -31,7 +36,7 @@ final class CardNumberMaskingFormatter implements FormatterInterface
 
     public function format(LogRecord $record): mixed
     {
-        return $this->mask($this->inner->format($record));
+        return $this->mask($this->inner->format($this->redactRecord($record)));
     }
 
     /**
@@ -39,7 +44,7 @@ final class CardNumberMaskingFormatter implements FormatterInterface
      */
     public function formatBatch(array $records): mixed
     {
-        return $this->mask($this->inner->formatBatch($records));
+        return $this->mask($this->inner->formatBatch(array_map($this->redactRecord(...), $records)));
     }
 
     /**
@@ -50,8 +55,18 @@ final class CardNumberMaskingFormatter implements FormatterInterface
         return $this->inner;
     }
 
+    private function redactRecord(LogRecord $record): LogRecord
+    {
+        return $record->with(
+            context: $this->redactor->redactSensitiveKeys($record->context),
+            extra: $this->redactor->redactSensitiveKeys($record->extra),
+        );
+    }
+
     private function mask(mixed $formatted): mixed
     {
-        return is_string($formatted) ? $this->redactor->maskCardNumbers($formatted) : $formatted;
+        return is_string($formatted)
+            ? $this->redactor->maskCardNumbers($this->redactor->maskSecrets($formatted))
+            : $formatted;
     }
 }

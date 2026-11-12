@@ -9,8 +9,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 use Twstec\Kit\Foundation\Identifiers\RoutesByUuid;
+use Twstec\Kit\Foundation\Logging\Enums\RequestActorType;
 use Twstec\Kit\Foundation\Logging\Enums\RequestLogStatus;
 use Twstec\Kit\Foundation\Logging\Exceptions\AppendOnlyViolationException;
+use Twstec\Kit\Foundation\Logging\RequestActor;
 
 /**
  * Log de requisição — trilha de auditoria/segurança, append-only.
@@ -38,6 +40,14 @@ use Twstec\Kit\Foundation\Logging\Exceptions\AppendOnlyViolationException;
  * @property string $correlation_id
  * @property string|null $client_correlation_id
  * @property string|null $tenant_uuid
+ * @property RequestActorType|null $actor_type
+ * @property string|null $actor_uuid
+ * @property string|null $api_key_uuid
+ * @property string|null $session_ref
+ * @property string|null $route_name
+ * @property string|null $ip_chain
+ * @property bool|null $forwarded_trusted
+ * @property array<string, string>|null $headers
  * @property string|null $ip
  * @property string|null $user_agent
  * @property string $method
@@ -62,6 +72,13 @@ class RequestLog extends Model
     protected $table = 'request_logs';
 
     /**
+     * Atributo da requisição com o uuid da chave de API que a autenticou —
+     * gravado pelo middleware de chave (pacote de contas), lido no fim do
+     * ciclo para `api_key_uuid` (ver RequestActor).
+     */
+    public const API_KEY_ATTRIBUTE = 'request_log.api_key_uuid';
+
+    /**
      * Atributos graváveis APENAS na criação (INSERT). Mutabilidade posterior
      * exclusivamente via markFinished()/bindTenant().
      *
@@ -72,7 +89,15 @@ class RequestLog extends Model
         'correlation_id',
         'client_correlation_id',
         'tenant_uuid',
+        'actor_type',
+        'actor_uuid',
+        'api_key_uuid',
+        'session_ref',
+        'route_name',
         'ip',
+        'ip_chain',
+        'forwarded_trusted',
+        'headers',
         'user_agent',
         'method',
         'endpoint',
@@ -97,6 +122,9 @@ class RequestLog extends Model
     {
         return [
             'payload' => 'array',
+            'headers' => 'array',
+            'forwarded_trusted' => 'boolean',
+            'actor_type' => RequestActorType::class,
             'status' => RequestLogStatus::class,
             'http_status_response' => 'integer',
             'duration_ms' => 'integer',
@@ -130,7 +158,8 @@ class RequestLog extends Model
     }
 
     /**
-     * Transição controlada de fim de ciclo: INICIADA → CONCLUIDA/ERRO.
+     * Transição controlada de fim de ciclo: INICIADA → CONCLUIDA/ERRO, com o
+     * ator (quem fez — só conhecido depois da autenticação) e o nome da rota.
      * Chamada pelo middleware de request logging no terminate.
      */
     public function markFinished(
@@ -138,6 +167,7 @@ class RequestLog extends Model
         ?int $httpStatusResponse = null,
         ?string $errorMessage = null,
         ?int $durationMs = null,
+        ?RequestActor $actor = null,
     ): void {
         if ($status === RequestLogStatus::Iniciada || $status === RequestLogStatus::Bloqueada) {
             throw new InvalidArgumentException('markFinished() só aceita CONCLUIDA ou ERRO.');
@@ -147,6 +177,14 @@ class RequestLog extends Model
         $this->http_status_response = $httpStatusResponse;
         $this->error_message = $errorMessage;
         $this->duration_ms = $durationMs;
+
+        if ($actor !== null) {
+            $this->actor_type = $actor->type;
+            $this->actor_uuid = $actor->actorUuid;
+            $this->api_key_uuid = $actor->apiKeyUuid;
+            $this->session_ref = $actor->sessionRef;
+            $this->route_name = $actor->routeName;
+        }
 
         $this->allowLifecycleUpdate = true;
         $this->save();

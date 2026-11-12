@@ -30,9 +30,13 @@ final class AppendOnlyTables
     public const KIT = [
         'audit_events' => ['updatable_columns' => []],
         'outbound_http_logs' => ['updatable_columns' => []],
-        // O ciclo de vida da requisição: RequestLog::markFinished() e
-        // RequestLog::bindTenant() — nada além disso.
-        'request_logs' => ['updatable_columns' => ['status', 'http_status_response', 'error_message', 'duration_ms', 'tenant_uuid']],
+        // O ciclo de vida da requisição: RequestLog::markFinished() (com o
+        // ator, conhecido só depois da autenticação) e RequestLog::bindTenant()
+        // — nada além disso.
+        'request_logs' => ['updatable_columns' => [
+            'status', 'http_status_response', 'error_message', 'duration_ms', 'tenant_uuid',
+            'actor_type', 'actor_uuid', 'api_key_uuid', 'session_ref', 'route_name',
+        ]],
     ];
 
     /**

@@ -65,7 +65,10 @@ it('registra as tabelas só-acréscimo do kit, soma as do projeto e não deixa o
         ->and($tables['ledger_entries']['updatable_columns'])->toBe([])
         ->and($tables['payment_events']['updatable_columns'])->toBe(['status'])
         ->and($tables['audit_events']['updatable_columns'])->toBe([])
-        ->and($tables['request_logs']['updatable_columns'])->toBe(['status', 'http_status_response', 'error_message', 'duration_ms', 'tenant_uuid', 'note']);
+        ->and($tables['request_logs']['updatable_columns'])->toBe([
+            'status', 'http_status_response', 'error_message', 'duration_ms', 'tenant_uuid',
+            'actor_type', 'actor_uuid', 'api_key_uuid', 'session_ref', 'route_name', 'note',
+        ]);
 });
 
 it('recusa nome de tabela ou lista de colunas inválidos no registro', function (array $declared): void {

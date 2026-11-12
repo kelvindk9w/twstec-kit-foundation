@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Twstec\Kit\Foundation\Logging;
 
+use InvalidArgumentException;
+
 /**
  * Redaction de dados sensíveis antes de persistir logs (LGPD: log nunca guarda dado sensível).
  *
@@ -19,10 +21,22 @@ namespace Twstec\Kit\Foundation\Logging;
  *   dígitos, com ou sem espaço/hífen entre eles, que passa no Luhn.
  * - Strings são truncadas (logs não são storage de payload gigante).
  *
+ * - Segredos de provedor dentro de TEXTO LIVRE (chave do Asaas `$aact_…`,
+ *   `sk_live_…` da Stripe, token do GitHub, chave de acesso da AWS, JWT,
+ *   `Bearer …`, bloco de chave privada) viram '[REDACTED]' onde estiverem,
+ *   em qualquer valor e na linha final dos logs de arquivo (#114).
+ *
  * A redaction é recursiva e cobre também as CHAVES do array (uma chave
  * maliciosa não vaza dado sensível como nome de campo): o nome é testado
  * contra a lista de segredos e o texto da própria chave passa pelas mesmas
  * máscaras de CPF/CNPJ/e-mail/cartão dos valores.
+ *
+ * O APLICATIVO ACRESCENTA (#122), nunca tira: `security.redaction.keys`,
+ * `.suffixes` e `.patterns` somam nomes de campo, sufixos e expressões do
+ * domínio dele (chave Pix, conta bancária, nome do pagador...) às listas do
+ * kit. A instância do contêiner (`fromConfig()`) é a mesma em todos os
+ * canais — trilha de requisições, chamadas de saída, auditoria, webhooks e o
+ * contexto dos logs de arquivo. `new Redactor` puro = só as listas do kit.
  */
 final class Redactor
 {
@@ -60,6 +74,137 @@ final class Redactor
      * @var list<string>
      */
     private const SENSITIVE_SUFFIXES = ['_token', '_secret', '_password', '_api_key'];
+
+    /**
+     * Dados pessoais SEM formato reconhecível (o texto livre não os pega):
+     * sensíveis por padrão — na dúvida, mascarar é o lado seguro (#122).
+     *
+     * @var list<string>
+     */
+    private const PERSONAL_KEYS = [
+        'phone', 'phone_number', 'mobile_phone', 'telefone', 'celular',
+        'birth_date', 'birthdate', 'data_nascimento',
+        'mother_name', 'nome_mae',
+        'bank_account', 'account_number', 'conta_bancaria', 'numero_conta',
+        'pix_key', 'chave_pix', 'address_key',
+    ];
+
+    /**
+     * Segredos de provedor reconhecíveis em TEXTO LIVRE (#114). Cada
+     * expressão é específica o bastante para não pegar UUID, número de
+     * pedido nem valor: prefixo conhecido + corpo longo.
+     *
+     * @var list<string>
+     */
+    private const SECRET_PATTERNS = [
+        // Asaas: $aact_prod_… / $aact_hmlg_… (o '$' às vezes some no caminho).
+        '/\$?aact_[A-Za-z0-9_\-:=+\/$]{8,}/',
+        // Stripe e as chaves de API do próprio kit (`<prefixo>_sk_live_…`,
+        // API_KEY_PREFIX): secretas, restritas, publicáveis; e o segredo de
+        // webhook.
+        '/\b(?:[a-z0-9]{1,16}_)?(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}/',
+        '/\bwhsec_[A-Za-z0-9+\/=]{8,}/',
+        // GitHub: tokens clássicos e fine-grained.
+        '/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/',
+        '/\bgithub_pat_[A-Za-z0-9_]{20,}/',
+        // AWS: id de chave de acesso.
+        '/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/',
+        // JWT (cabeçalho.corpo.assinatura).
+        '/\beyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/',
+        // Credencial em cabeçalho copiado para texto.
+        '/\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+\/=-]{8,}/i',
+        // Bloco PEM de chave privada.
+        '/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/',
+    ];
+
+    /**
+     * Nomes de campo (minúsculos) mascarados: os do kit + os do aplicativo.
+     *
+     * @var list<string>
+     */
+    private readonly array $keys;
+
+    /**
+     * @var list<string>
+     */
+    private readonly array $suffixes;
+
+    /**
+     * @var list<string>
+     */
+    private readonly array $patterns;
+
+    /**
+     * @param  iterable<mixed>  $keys  nomes de campo do aplicativo (somados aos do kit)
+     * @param  iterable<mixed>  $suffixes  sufixos do aplicativo (somados aos do kit)
+     * @param  iterable<mixed>  $patterns  expressões regulares PCRE completas, com delimitador
+     *
+     * @throws InvalidArgumentException nome vazio ou expressão inválida — a configuração errada falha no boot, não vira máscara que não mascara
+     */
+    public function __construct(iterable $keys = [], iterable $suffixes = [], iterable $patterns = [])
+    {
+        $this->keys = self::names([...self::SENSITIVE_KEYS, ...self::PERSONAL_KEYS], $keys, 'keys');
+        $this->suffixes = self::names(self::SENSITIVE_SUFFIXES, $suffixes, 'suffixes');
+
+        $extra = [];
+
+        foreach ($patterns as $pattern) {
+            if (! is_string($pattern) || $pattern === '' || @preg_match($pattern, '') === false) {
+                throw new InvalidArgumentException('security.redaction.patterns: expressão regular inválida ('.var_export($pattern, true).').');
+            }
+
+            $extra[] = $pattern;
+        }
+
+        $this->patterns = array_values(array_unique([...self::SECRET_PATTERNS, ...$extra]));
+    }
+
+    /**
+     * A instância do contêiner: as listas do kit + `security.redaction`.
+     */
+    public static function fromConfig(): self
+    {
+        $config = config('security.redaction', []);
+        $config = is_array($config) ? $config : [];
+
+        return new self(
+            self::listFrom($config['keys'] ?? []),
+            self::listFrom($config['suffixes'] ?? []),
+            self::listFrom($config['patterns'] ?? []),
+        );
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private static function listFrom(mixed $value): array
+    {
+        if (is_string($value)) {
+            return array_values(array_filter(array_map('trim', explode(',', $value)), 'strlen'));
+        }
+
+        return is_array($value) ? array_values($value) : [];
+    }
+
+    /**
+     * @param  list<string>  $kit
+     * @param  iterable<mixed>  $extra
+     * @return list<string>
+     */
+    private static function names(array $kit, iterable $extra, string $setting): array
+    {
+        $names = $kit;
+
+        foreach ($extra as $name) {
+            if (! is_string($name) || trim($name) === '') {
+                throw new InvalidArgumentException("security.redaction.{$setting}: cada item precisa ser um nome não vazio.");
+            }
+
+            $names[] = mb_strtolower(trim($name));
+        }
+
+        return array_values(array_unique($names));
+    }
 
     /**
      * Faixa de comprimento de um PAN (ISO/IEC 7812): 13 a 19 dígitos.
@@ -122,6 +267,10 @@ final class Redactor
      */
     public function redactString(string $value): string
     {
+        // Segredos de provedor primeiro: o corpo de uma chave pode conter
+        // dígitos que as máscaras seguintes cortariam pela metade.
+        $value = $this->maskSecrets($value);
+
         // Cartão por último: CPF/CNPJ já mascarados não voltam a casar (os
         // dígitos viraram '*'), e um CNPJ que por acaso passe no Luhn mantém
         // a máscara própria de documento.
@@ -145,6 +294,41 @@ final class Redactor
         );
 
         return $this->maskCardNumbers($value);
+    }
+
+    /**
+     * Troca por '[REDACTED]' os segredos reconhecíveis em texto livre: os
+     * padrões do kit (#114) e os do aplicativo (`security.redaction.patterns`).
+     */
+    public function maskSecrets(string $value): string
+    {
+        foreach ($this->patterns as $pattern) {
+            $value = (string) preg_replace($pattern, self::MASK, $value);
+        }
+
+        return $value;
+    }
+
+    /**
+     * Só a regra por NOME de campo, recursiva: o valor de chave sensível
+     * vira '[REDACTED]'; o resto fica como está. É o que o contexto dos logs
+     * de arquivo recebe (as máscaras de texto livre de CPF/e-mail continuam
+     * com quem monta o contexto; cartão e segredos são pegos na linha final).
+     *
+     * @param  array<array-key, mixed>  $data
+     * @return array<array-key, mixed>
+     */
+    public function redactSensitiveKeys(array $data): array
+    {
+        foreach ($data as $key => $value) {
+            if (is_string($key) && $this->isSensitiveKey($key)) {
+                $data[$key] = self::MASK;
+            } elseif (is_array($value)) {
+                $data[$key] = $this->redactSensitiveKeys($value);
+            }
+        }
+
+        return $data;
     }
 
     /**
@@ -311,15 +495,22 @@ final class Redactor
      */
     public function isSensitiveKey(string $key): bool
     {
-        $key = mb_strtolower($key);
+        // O nome como veio e a forma snake de um nome camelCase (APIs de
+        // provedor: `mobilePhone`, `apiKey`, `accessToken`).
+        $candidates = array_unique([
+            mb_strtolower($key),
+            mb_strtolower((string) preg_replace('/(?<=[a-z0-9])(?=[A-Z])/', '_', $key)),
+        ]);
 
-        if (in_array($key, self::SENSITIVE_KEYS, true)) {
-            return true;
-        }
-
-        foreach (self::SENSITIVE_SUFFIXES as $suffix) {
-            if (str_ends_with($key, $suffix)) {
+        foreach ($candidates as $candidate) {
+            if (in_array($candidate, $this->keys, true)) {
                 return true;
+            }
+
+            foreach ($this->suffixes as $suffix) {
+                if (str_ends_with($candidate, $suffix)) {
+                    return true;
+                }
             }
         }
 

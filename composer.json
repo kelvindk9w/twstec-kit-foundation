@@ -73,7 +73,7 @@
             "pestphp/pest-plugin": true
         },
         "platform": {
-            "php": "8.4.24"
+            "php": "8.4.27"
         }
     },
     "minimum-stability": "stable",

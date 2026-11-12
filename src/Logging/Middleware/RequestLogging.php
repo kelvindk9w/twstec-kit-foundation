@@ -16,6 +16,8 @@ use Twstec\Kit\Foundation\Logging\Enums\RequestLogStatus;
 use Twstec\Kit\Foundation\Logging\Models\RequestLog;
 use Twstec\Kit\Foundation\Logging\PersistFailure;
 use Twstec\Kit\Foundation\Logging\Redactor;
+use Twstec\Kit\Foundation\Logging\RequestActor;
+use Twstec\Kit\Foundation\Logging\RequestHeaderSnapshot;
 use Twstec\Kit\Foundation\Logging\ScanTrafficSampler;
 use Twstec\Kit\Foundation\Security\AttackEvidence;
 use Twstec\Kit\Foundation\Security\Middleware\SecurityValidation;
@@ -35,6 +37,11 @@ use Twstec\Kit\Foundation\Security\SignedBodyPaths;
  *   (HTTP >= 500), com duração, status HTTP e mensagem de erro redigida.
  * - Um log que permanece INICIADA = requisição que não chegou ao fim
  *   (bug, timeout, queda, ataque) → investigar.
+ * - QUEM e POR ONDE: na chegada, a cadeia de proxies (ip_chain,
+ *   forwarded_trusted) e a lista fechada de cabeçalhos redigidos
+ *   (RequestHeaderSnapshot); no terminate, o ator — pessoa, chave de API,
+ *   sistema ou anônimo —, a referência da sessão e o nome da rota
+ *   (RequestActor), que só existem depois da autenticação.
  * - tenant_uuid nasce NULL (o log é gravado antes da identificação); o
  *   ResolveTenant o preenche via RequestLog::bindTenant() quando a chave de
  *   API é válida. Log que termina sem tenant = possível ataque.
@@ -73,6 +80,7 @@ final class RequestLogging
     public function __construct(
         private readonly Redactor $redactor,
         private readonly AttackEvidence $evidence,
+        private readonly RequestHeaderSnapshot $headers,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -157,7 +165,7 @@ final class RequestLogging
         }
 
         try {
-            $log->markFinished($status, $httpStatus, $errorMessage, $durationMs);
+            $log->markFinished($status, $httpStatus, $errorMessage, $durationMs, RequestActor::fromRequest($request));
         } catch (Throwable $exception) {
             Log::channel('request_log')->critical('request.finished.persist_failed', [
                 'correlation_id' => $log->correlation_id,
@@ -210,6 +218,9 @@ final class RequestLogging
                 'correlation_id' => $correlationId,
                 'client_correlation_id' => $clientCorrelationId,
                 'ip' => $request->ip(),
+                'ip_chain' => $this->headers->ipChain($request),
+                'forwarded_trusted' => $this->headers->forwardedTrusted($request),
+                'headers' => $this->headers->headers($request),
                 'user_agent' => $attackType !== null
                     ? $this->evidence->userAgent($request)
                     : Str::limit((string) $request->userAgent(), 500, ''),
