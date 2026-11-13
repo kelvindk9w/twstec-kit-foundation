@@ -96,3 +96,17 @@ it('rota que tira o middleware do grupo (withoutMiddleware) conta como sem idemp
         ->and(RouteIdempotency::missing('api/v1/pagamentos/isenta'))
         ->toBe(['POST api/v1/pagamentos/isenta: sem o middleware idempotent']);
 });
+
+it('lê os cabeçalhos de contexto da rota (headers=) e os soma aos globais', function (): void {
+    Route::post('api/v1/cobrancas', fn () => response()->noContent())
+        ->middleware(HandleIdempotencyKey::using(required: true, transactional: true, headers: ['X-Project']));
+
+    config()->set('idempotency.fingerprint_headers', ['X-Account']);
+
+    $options = RouteIdempotency::of(idemRoute('POST', 'api/v1/cobrancas'));
+
+    expect($options?->headers)->toBe(['x-project'])
+        ->and($options?->fingerprintHeaders())->toBe(['x-account', 'x-project'])
+        ->and(RouteIdempotency::of(idemRoute('POST', 'api/v1/pagamentos'))?->fingerprintHeaders())->toBe(['x-account'])
+        ->and(RouteIdempotency::missing('api/v1/cobrancas', transactional: true))->toBe([]);
+});

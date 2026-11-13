@@ -23,6 +23,12 @@
         <x-alert type="success">{{ session('projects_status') }}</x-alert>
     @endif
 
+    {{-- Exclusão recusada (regra do aplicativo ou registro que ainda aponta
+         para o projeto): o motivo, no lugar do aviso de sucesso. --}}
+    @error('project')
+        <x-alert type="error" data-testid="projects-error">{{ $message }}</x-alert>
+    @enderror
+
     {{-- Criação inline (mesma tela) --}}
     @if ($showCreateForm)
         <x-card :title="__('panel.projects.new')">

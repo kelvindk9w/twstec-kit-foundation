@@ -124,3 +124,36 @@ it('leva em conta os arquivos em QUALQUER tipo de corpo (não só no multipart)'
     expect($comArquivo('conteúdo A'))->toBe($comArquivo('conteúdo A'))
         ->and($comArquivo('conteúdo A'))->not->toBe($comArquivo('conteúdo B'));
 });
+
+it('sem cabeçalhos de contexto, a forma canônica é exatamente a de antes (as chaves guardadas continuam valendo)', function (): void {
+    $request = Request::create('/api/pedidos?b=2', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_PROJECT' => 'PRJ-AAAAAA'], '{"item":"caderno"}');
+
+    expect(RequestFingerprint::canonical($request))
+        ->toBe('{"v":1,"method":"POST","path":"/api/pedidos","query":{"b":"2"},"body":{"kind":"json","value":{"item":"caderno"}},"files":[]}')
+        ->and(RequestFingerprint::hash($request, []))->toBe(RequestFingerprint::hash($request));
+});
+
+it('com cabeçalhos de contexto, distingue o valor, a ausência e o vazio; a ordem e a caixa da lista não importam', function (): void {
+    $with = fn (array $server, array $headers = ['X-Project']): string => RequestFingerprint::hash(
+        Request::create('/api/pedidos', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json', ...$server], '{"item":"caderno"}'),
+        $headers,
+    );
+
+    $a = $with(['HTTP_X_PROJECT' => 'PRJ-AAAAAA']);
+
+    expect($a)->not->toBe($with(['HTTP_X_PROJECT' => 'PRJ-BBBBBB']))
+        ->and($a)->not->toBe($with([]))
+        ->and($with([]))->not->toBe($with(['HTTP_X_PROJECT' => '']))
+        ->and($a)->not->toBe($with(['HTTP_X_PROJECT' => 'prj-aaaaaa']))
+        ->and($a)->toBe($with(['HTTP_X_PROJECT' => 'PRJ-AAAAAA'], ['x-project', 'X-PROJECT']))
+        ->and($with(['HTTP_X_PROJECT' => 'PRJ-AAAAAA', 'HTTP_X_STORE' => 'l1'], ['X-Store', 'X-Project']))
+        ->toBe($with(['HTTP_X_PROJECT' => 'PRJ-AAAAAA', 'HTTP_X_STORE' => 'l1'], ['X-Project', 'X-Store']))
+        ->and($a)->not->toBe(RequestFingerprint::hash(Request::create('/api/pedidos', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_PROJECT' => 'PRJ-AAAAAA'], '{"item":"caderno"}')));
+
+    expect(RequestFingerprint::canonical(Request::create('/x', 'POST', [], [], [], ['HTTP_X_PROJECT' => 'PRJ-AAAAAA']), ['X-Project', 'X-Store']))
+        ->toEndWith(',"headers":{"x-project":["PRJ-AAAAAA"],"x-store":null}}');
+});
+
+it('recusa nome de cabeçalho fora do formato HTTP', function (mixed $name): void {
+    expect(fn () => RequestFingerprint::headerNames([$name]))->toThrow(InvalidArgumentException::class);
+})->with(['vazio' => '', 'espaço' => 'X Project', 'dois-pontos' => 'X-Project:', 'quebra de linha' => "X-A\nX-B", 'não texto' => 1]);

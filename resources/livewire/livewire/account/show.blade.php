@@ -68,6 +68,45 @@
         @endif
     </x-card>
 
+    {{-- Limites da API da conta (twstec/kit-accounts 2.4+; ausente ou nulo
+         com os limites desligados). Só o dono baixa — a Action recusa o
+         resto. --}}
+    @if (! empty($apiLimits))
+        <x-card :title="__('panel.account.api_limits')" data-api-limits>
+            <p class="mb-4 max-w-3xl text-caption text-text-muted">{{ __('panel.account.api_limits_hint', ['minutes' => $apiLimits['windowMinutes']]) }}</p>
+            <form wire:submit="saveApiLimits" class="grid gap-4 sm:grid-cols-3">
+                @foreach ($apiLimits['limits'] as $limit)
+                    @php
+                        $valores = __('panel.account.api_limits_values', ['effective' => number_format($limit['effective'], 0, ',', '.'), 'platform' => number_format($limit['platform'], 0, ',', '.')]);
+                    @endphp
+                    <div class="min-w-0" data-api-limit="{{ $limit['key'] }}">
+                        @if ($apiLimits['canReduce'])
+                            <x-input
+                                type="number"
+                                :label="$limit['label']"
+                                name="apiLimit_{{ $limit['key'] }}"
+                                wire:model="apiLimitValues.{{ $limit['key'] }}"
+                                min="1"
+                                max="{{ $limit['platform'] }}"
+                                placeholder="{{ __('panel.account.api_limits_placeholder', ['platform' => number_format($limit['platform'], 0, ',', '.')]) }}"
+                                :hint="$valores"
+                                :error="$errors->first('apiLimitValues.'.$limit['key'])"
+                            />
+                        @else
+                            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ $limit['label'] }}</p>
+                            <p class="mt-1 text-caption text-text-muted">{{ $valores }}</p>
+                        @endif
+                    </div>
+                @endforeach
+                @if ($apiLimits['canReduce'])
+                    <div class="sm:col-span-3">
+                        <x-button type="submit">{{ __('panel.account.api_limits_save') }}</x-button>
+                    </div>
+                @endif
+            </form>
+        </x-card>
+    @endif
+
     {{-- Membros --}}
     <section class="space-y-3" data-members>
         <div class="flex flex-wrap items-end justify-between gap-3">

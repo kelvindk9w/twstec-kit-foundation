@@ -25,6 +25,11 @@ return [
         'idempotency_key_invalid' => 'Invalid Idempotency-Key: use :min to :max characters among letters, digits and - _ . : ~ + / =.',
         'idempotency_key_reused' => 'This Idempotency-Key was already used with a different request. Use a new key for a new operation.',
         'idempotency_request_in_progress' => 'A request with this Idempotency-Key is being processed or ended without a recorded result. Try again shortly; if it persists, check the state of the resource before repeating the operation with a new key.',
+        'api_quota_exceeded' => 'The account request quota for this window is used up. It starts over when the window ends (see Retry-After and RateLimit-Reset).',
+        'api_burst_exceeded' => 'Too many requests from the account this minute. Try again shortly.',
+        'api_concurrency_exceeded' => 'Too many requests from the account in progress at the same time. Wait for one to finish and try again.',
+        'api_route_limit_exceeded' => 'Too many requests from the account to this endpoint. Try again shortly.',
+        'api_limits_unavailable' => 'The API limits could not be checked right now. Try again shortly.',
         'server_error' => 'Internal error. Provide the correlation_id to support.',
     ],
 

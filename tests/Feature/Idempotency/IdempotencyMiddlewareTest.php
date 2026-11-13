@@ -226,6 +226,86 @@ it('mesma chave com corpo diferente: recusa 422 com código estável, sem execut
         ->and($refused[0]['level'])->toBe('warning');
 });
 
+it('por padrão, cabeçalho que não está na lista não muda a requisição: mesma chave e mesmo corpo com outro X-Project é replay', function (): void {
+    idemPost(headers: ['X-Project' => 'PRJ-AAAAAA'])->assertCreated();
+
+    idemPost(headers: ['X-Project' => 'PRJ-BBBBBB'])
+        ->assertCreated()
+        ->assertHeader('Idempotent-Replayed', 'true');
+
+    expect(idemOrders())->toBe(1);
+});
+
+it('cabeçalho de contexto na lista GLOBAL: mesma chave e mesmo corpo com outro valor é recusa 422, como corpo diferente', function (): void {
+    config()->set('idempotency.fingerprint_headers', ['x-PROJECT']);
+
+    $first = idemPost(headers: ['X-Project' => 'PRJ-AAAAAA'])->assertCreated();
+
+    // O mesmo valor (o nome do cabeçalho não diferencia maiúsculas): replay.
+    test()->postJson('/api/pedidos', ['item' => 'caderno'], ['X-Test-Tenant' => 'conta-a', 'Idempotency-Key' => IDEM_KEY, 'x-project' => 'PRJ-AAAAAA'])
+        ->assertCreated()
+        ->assertHeader('Idempotent-Replayed', 'true');
+
+    foreach ([['X-Project' => 'PRJ-BBBBBB'], ['X-Project' => ''], []] as $headers) {
+        idemPost(headers: $headers)
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'idempotency_key_reused')
+            ->assertJsonPath('error.message', __('api.errors.idempotency_key_reused'));
+    }
+
+    expect(idemOrders())->toBe(1)
+        ->and($first->json('data.item'))->toBe('caderno')
+        ->and(array_column(array_column(idemLog('api.idempotency.refused'), 'context'), 'reason'))->toBe(['key_reused', 'key_reused', 'key_reused']);
+
+    // Só o hash vai para a tabela: o valor do cabeçalho não aparece em claro.
+    expect(json_encode(DB::table('idempotency_keys')->get()->all()))->not->toContain('PRJ-AAAAAA');
+});
+
+it('cabeçalho de contexto POR ROTA (headers=): vale só nela e soma-se ao global', function (): void {
+    Route::post('api/pedidos-por-projeto', fn (Request $request) => response()->json(['data' => ['id' => DB::table('idem_test_orders')->insertGetId(['tenant' => 'x', 'item' => (string) $request->input('item')])]], 201))
+        ->middleware(HandleIdempotencyKey::using(headers: ['X-Project']));
+
+    idemPost(uri: '/api/pedidos-por-projeto', headers: ['X-Project' => 'PRJ-AAAAAA', 'X-Store' => 'loja-1'])->assertCreated();
+    idemPost(uri: '/api/pedidos-por-projeto', headers: ['X-Project' => 'PRJ-BBBBBB', 'X-Store' => 'loja-1'])
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'idempotency_key_reused');
+
+    // Sem o global, X-Store não conta; com ele, a rota usa os dois.
+    idemPost(uri: '/api/pedidos-por-projeto', headers: ['X-Project' => 'PRJ-AAAAAA', 'X-Store' => 'loja-2'])
+        ->assertCreated()
+        ->assertHeader('Idempotent-Replayed', 'true');
+
+    config()->set('idempotency.fingerprint_headers', ['X-Store']);
+
+    idemPost(['item' => 'lote'], IDEM_OTHER_KEY, uri: '/api/pedidos-por-projeto', headers: ['X-Project' => 'PRJ-AAAAAA', 'X-Store' => 'loja-1'])->assertCreated();
+    idemPost(['item' => 'lote'], IDEM_OTHER_KEY, uri: '/api/pedidos-por-projeto', headers: ['X-Project' => 'PRJ-AAAAAA', 'X-Store' => 'loja-2'])->assertStatus(422);
+    idemPost(['item' => 'lote'], IDEM_OTHER_KEY, uri: '/api/pedidos-por-projeto', headers: ['X-Project' => 'PRJ-BBBBBB', 'X-Store' => 'loja-1'])->assertStatus(422);
+
+    // A outra rota (sem headers=) só leva o global.
+    $third = 'c4d5e6f7-0a1b-4c2d-8e3f-4a5b6c7d8e9f';
+    idemPost(key: $third, headers: ['X-Project' => 'PRJ-AAAAAA', 'X-Store' => 'loja-1'])->assertCreated();
+    idemPost(key: $third, headers: ['X-Project' => 'PRJ-BBBBBB', 'X-Store' => 'loja-1'])->assertHeader('Idempotent-Replayed', 'true');
+    idemPost(key: $third, headers: ['X-Project' => 'PRJ-AAAAAA', 'X-Store' => 'loja-2'])->assertStatus(422);
+
+    expect(idemOrders())->toBe(3);
+});
+
+it('cabeçalho de contexto inválido (na rota ou no global) é erro de montagem, não um cabeçalho ignorado', function (): void {
+    Route::post('api/cabecalho-mal-montado', fn () => response()->json([], 201))->middleware('idempotent:headers=X Project');
+    Route::post('api/cabecalho-vazio', fn () => response()->json([], 201))->middleware('idempotent:headers=');
+
+    idemPost(uri: '/api/cabecalho-mal-montado')->assertStatus(500);
+    idemPost(uri: '/api/cabecalho-vazio')->assertStatus(500);
+
+    config()->set('idempotency.fingerprint_headers', ['X-Project:']);
+    idemPost()->assertStatus(500);
+    expect(idemOrders())->toBe(0);
+
+    expect(HandleIdempotencyKey::using(required: true, transactional: true, headers: ['X-Project', 'x-project', 'X-Account']))
+        ->toBe('idempotent:required,transactional,headers=x-account|x-project')
+        ->and(fn () => HandleIdempotencyKey::using(headers: ['']))->toThrow(InvalidArgumentException::class);
+});
+
 it('a mesma chave em dois escopos (contas) são duas escritas independentes', function (): void {
     $a = idemPost(tenant: 'conta-a');
     $b = idemPost(tenant: 'conta-b');

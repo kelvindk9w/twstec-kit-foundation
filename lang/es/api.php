@@ -25,6 +25,11 @@ return [
         'idempotency_key_invalid' => 'Idempotency-Key inválida: use de :min a :max caracteres entre letras, dígitos y - _ . : ~ + / =.',
         'idempotency_key_reused' => 'Esta Idempotency-Key ya se usó con una solicitud diferente. Use una clave nueva para una operación nueva.',
         'idempotency_request_in_progress' => 'Una solicitud con esta Idempotency-Key se está procesando o terminó sin un resultado registrado. Inténtelo de nuevo en unos instantes; si persiste, consulte el estado del recurso antes de repetir la operación con una clave nueva.',
+        'api_quota_exceeded' => 'La cuota de solicitudes de la cuenta en esta ventana se agotó. Se reinicia cuando la ventana termine (vea Retry-After y RateLimit-Reset).',
+        'api_burst_exceeded' => 'Demasiadas solicitudes de la cuenta en este minuto. Inténtelo de nuevo en unos instantes.',
+        'api_concurrency_exceeded' => 'Demasiadas solicitudes de la cuenta en curso al mismo tiempo. Espere a que termine una e inténtelo de nuevo.',
+        'api_route_limit_exceeded' => 'Demasiadas solicitudes de la cuenta a este endpoint. Inténtelo de nuevo en unos instantes.',
+        'api_limits_unavailable' => 'No fue posible verificar los límites de la API ahora. Inténtelo de nuevo en unos instantes.',
         'server_error' => 'Error interno. Informe el correlation_id al soporte.',
     ],
 

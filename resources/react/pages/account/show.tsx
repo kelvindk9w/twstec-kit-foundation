@@ -46,6 +46,9 @@ type Props = {
     members: Member[];
     invitations: Invitation[];
     roleOptions: { value: 'member' | 'admin'; label: string }[];
+    // Limites da API da conta (twstec/kit-accounts 2.4+): nulo/ausente com
+    // os limites desligados — a seção some.
+    apiLimits?: ApiLimitsPanel | null;
     can: {
         rename: boolean;
         invite: boolean;
@@ -54,6 +57,104 @@ type Props = {
         leave: boolean;
     };
 };
+
+type ApiLimitsPanel = {
+    windowMinutes: number;
+    canReduce: boolean;
+    limits: {
+        key: string;
+        label: string;
+        effective: number;
+        platform: number;
+        own: number | null;
+    }[];
+};
+
+/**
+ * Limites da API da conta: o que vale e o máximo da plataforma; o dono baixa
+ * (campo vazio = sem redução). A Action do pacote recusa o que passar do
+ * máximo ou vier de quem não é o dono.
+ */
+function ApiLimitsSection({ panel }: { panel: ApiLimitsPanel }) {
+    const { t } = useTrans();
+    const { route } = useRoute();
+    const form = useForm<Record<string, string>>(
+        Object.fromEntries(
+            panel.limits.map((limit) => [
+                limit.key,
+                limit.own === null ? '' : String(limit.own),
+            ]),
+        ),
+    );
+    const number = (value: number) => value.toLocaleString();
+
+    return (
+        <SectionCard
+            title={t('panel.account.api_limits')}
+            description={t('panel.account.api_limits_hint', {
+                minutes: String(panel.windowMinutes),
+            })}
+        >
+            <form
+                className="grid gap-4 sm:grid-cols-3"
+                onSubmit={(event) => {
+                    event.preventDefault();
+                    form.patch(route('panel.account.api-limits'), {
+                        preserveScroll: true,
+                    });
+                }}
+                data-api-limits
+            >
+                {panel.limits.map((limit) => (
+                    <div
+                        key={limit.key}
+                        className="grid min-w-0 content-start gap-2"
+                        data-api-limit={limit.key}
+                    >
+                        <Label htmlFor={`api-limit-${limit.key}`}>
+                            {limit.label}
+                        </Label>
+                        {panel.canReduce ? (
+                            <Input
+                                id={`api-limit-${limit.key}`}
+                                type="number"
+                                inputMode="numeric"
+                                min={1}
+                                max={limit.platform}
+                                value={form.data[limit.key] ?? ''}
+                                placeholder={t(
+                                    'panel.account.api_limits_placeholder',
+                                    { platform: number(limit.platform) },
+                                )}
+                                onChange={(event) =>
+                                    form.setData(limit.key, event.target.value)
+                                }
+                                aria-invalid={
+                                    form.errors[limit.key] ? true : undefined
+                                }
+                            />
+                        ) : null}
+                        <p className="text-xs text-muted-foreground">
+                            {t('panel.account.api_limits_values', {
+                                effective: number(limit.effective),
+                                platform: number(limit.platform),
+                            })}
+                        </p>
+                        <InputError message={form.errors[limit.key]} />
+                    </div>
+                ))}
+                {panel.canReduce && (
+                    <div className="sm:col-span-3">
+                        <Button type="submit" disabled={form.processing}>
+                            {form.processing && <Spinner />}
+                            {t('panel.account.api_limits_save')}
+                        </Button>
+                    </div>
+                )}
+            </form>
+        </SectionCard>
+    );
+}
 
 /**
  * A PÁGINA DA CONTA ATUAL — dados, membros (tabela ou cartões), convites e os
@@ -68,6 +169,7 @@ export default function AccountShow({
     members,
     invitations,
     roleOptions,
+    apiLimits,
     can,
 }: Props) {
     const { t, tc } = useTrans();
@@ -210,6 +312,8 @@ export default function AccountShow({
                     </p>
                 )}
             </SectionCard>
+
+            {apiLimits && <ApiLimitsSection panel={apiLimits} />}
 
             {/* Membros */}
             <section className="space-y-3" data-members>

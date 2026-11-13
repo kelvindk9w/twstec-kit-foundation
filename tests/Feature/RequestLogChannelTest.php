@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use Illuminate\Config\Repository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Monolog\Formatter\JsonFormatter;
+use Monolog\Handler\NullHandler;
 use Twstec\Kit\Foundation\Audit\AuditScope;
 use Twstec\Kit\Foundation\Audit\AuditTrail;
 use Twstec\Kit\Foundation\Logging\MaskCardNumbersInLogs;
@@ -66,6 +69,7 @@ function emitTrailEvents(): void
 
 it('sem canal na aplicação, o pacote registra o padrão — o mesmo do starter', function (): void {
     expect(config('logging.channels.request_log'))->toBe(RequestLogChannel::definition())
+        ->and(RequestLogChannel::definition())->toBe(RequestLogChannel::fileDefinition())
         ->and(config('logging.channels.request_log.driver'))->toBe('daily')
         ->and(config('logging.channels.request_log.path'))->toBe(storage_path('logs/request.log'))
         ->and(config('logging.channels.request_log.tap'))->toBe([MaskCardNumbersInLogs::class]);
@@ -119,3 +123,68 @@ it('registerDefault só age quando a aplicação não tem o canal', function ():
         ->and(RequestLogChannel::registerDefault($own))->toBeFalse()
         ->and($own->get('logging.channels.request_log'))->toBe(['driver' => 'single']);
 });
+
+/**
+ * Roda com REQUEST_LOG_DISCARD no ambiente (como o phpunit.xml dos starters
+ * o põe) e o ambiente da aplicação dado; desfaz os dois no fim.
+ *
+ * @template T
+ *
+ * @param  Closure(): T  $callback
+ * @return T
+ */
+function withRequestLogDiscard(?string $value, string $environment, Closure $callback): mixed
+{
+    $name = RequestLogChannel::DISCARD_ENV;
+    $previous = app()->environment();
+
+    if ($value === null) {
+        putenv($name);
+        unset($_ENV[$name], $_SERVER[$name]);
+    } else {
+        putenv("{$name}={$value}");
+        $_ENV[$name] = $_SERVER[$name] = $value;
+    }
+
+    app()->detectEnvironment(static fn (): string => $environment);
+
+    try {
+        return $callback();
+    } finally {
+        putenv($name);
+        unset($_ENV[$name], $_SERVER[$name]);
+        app()->detectEnvironment(static fn (): string => $previous);
+    }
+}
+
+it('nos testes, com REQUEST_LOG_DISCARD=true, o canal padrão descarta: nada chega ao arquivo e o evento de log continua saindo', function (): void {
+    $definition = withRequestLogDiscard('true', 'testing', fn (): array => RequestLogChannel::definition());
+
+    expect($definition)->toBe(RequestLogChannel::discardDefinition())
+        ->and($definition['handler'])->toBe(NullHandler::class);
+
+    $path = (string) config('logging.channels.request_log.path');
+    clearLogFiles($path);
+    config(['logging.channels.request_log' => $definition]);
+    Log::forgetChannel('request_log');
+    $seen = [];
+    Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$seen): void {
+        $seen[] = $event->message;
+    });
+
+    Log::channel('request_log')->warning('descartado.no.teste');
+    emitTrailEvents();
+
+    expect(glob(str_replace('.log', '-*.log', $path)) ?: [])->toBe([])
+        ->and($seen)->toContain('descartado.no.teste', 'security.observed', 'request.throttled', 'audit.event');
+});
+
+it('fora dos testes a variável é ignorada: produção e desenvolvimento gravam sempre no arquivo', function (string $environment): void {
+    expect(withRequestLogDiscard('true', $environment, fn (): array => RequestLogChannel::definition()))
+        ->toBe(RequestLogChannel::fileDefinition());
+})->with(['production', 'local', 'staging']);
+
+it('sem a variável (ou desligada), nem nos testes descarta', function (?string $value): void {
+    expect(withRequestLogDiscard($value, 'testing', fn (): array => RequestLogChannel::definition()))
+        ->toBe(RequestLogChannel::fileDefinition());
+})->with([null, 'false', '0', '']);

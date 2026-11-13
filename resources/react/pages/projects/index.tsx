@@ -1,4 +1,4 @@
-import { useForm, router } from '@inertiajs/react';
+import { useForm, router, usePage } from '@inertiajs/react';
 import {
     Archive,
     ArchiveRestore,
@@ -16,6 +16,7 @@ import { NameDialog } from '@/components/name-dialog';
 import { PageHeader } from '@/components/page-header';
 import { ResponsiveList } from '@/components/responsive-list';
 import { SectionCard } from '@/components/section-card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -52,12 +53,17 @@ type Props = {
 /**
  * Projetos da conta atual — a mesma tela do starter Livewire: criar, renomear,
  * arquivar/reativar e excluir, tudo aqui. O que o papel não permite não
- * aparece (member não exclui) — e o servidor recusa do mesmo jeito.
+ * aparece (member não exclui) — e o servidor recusa do mesmo jeito. A
+ * exclusão recusada (regra do aplicativo, ou registro que ainda aponta para o
+ * projeto) volta em `errors.project` e aparece no lugar do aviso de sucesso.
  */
 export default function Projects({ projects, can }: Props) {
     const { t } = useTrans();
     const { route } = useRoute();
     const [mode, setMode] = useViewMode('projects');
+    const deleteError = (
+        usePage().props.errors as Record<string, string | undefined>
+    ).project;
 
     const [creating, setCreating] = useState(false);
     const [editing, setEditing] = useState<Project | null>(null);
@@ -167,6 +173,12 @@ export default function Projects({ projects, can }: Props) {
                     </Button>
                 )}
             </div>
+
+            {deleteError && (
+                <Alert variant="destructive" data-projects-error>
+                    <AlertDescription>{deleteError}</AlertDescription>
+                </Alert>
+            )}
 
             {creating && (
                 <SectionCard title={t('panel.projects.new')}>

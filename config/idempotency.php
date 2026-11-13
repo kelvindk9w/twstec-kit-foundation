@@ -20,6 +20,19 @@ return [
         explode(',', (string) env('IDEMPOTENCY_METHODS', 'POST,PATCH')),
     ))),
 
+    // Cabeçalhos de CONTEXTO que entram na impressão da requisição, separados
+    // por vírgula (ex.: X-Project, quando um cabeçalho escolhe sobre o que a
+    // escrita age). A mesma chave com o mesmo corpo e outro valor num deles é
+    // "outra requisição": 422 `idempotency_key_reused`, como corpo diferente.
+    // Vale em toda rota com o middleware; a rota acrescenta os dela com
+    // `headers=X-Outro` (nunca tira um daqui). Vazio (padrão) = a impressão de
+    // sempre (método, caminho, query, corpo e arquivos). Nome inválido é erro
+    // de montagem. Só o hash é guardado, nunca o valor.
+    'fingerprint_headers' => array_values(array_filter(array_map(
+        static fn (string $header): string => trim($header),
+        explode(',', (string) env('IDEMPOTENCY_FINGERPRINT_HEADERS', '')),
+    ))),
+
     // Por quanto tempo a chave vale, em HORAS, contadas da primeira
     // execução. Depois disso a mesma chave executa de novo.
     'ttl_hours' => (int) env('IDEMPOTENCY_TTL_HOURS', 24),

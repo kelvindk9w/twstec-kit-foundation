@@ -46,7 +46,8 @@ use Twstec\Kit\Foundation\Logging\EndpointSignature;
  *    unicidade (escopo, chave) — ver IdempotencyStore. Só UMA requisição
  *    ganha;
  * 3. quem perdeu encontra a linha da vencedora:
- *    - corpo diferente (hash da forma canônica — RequestFingerprint) → 422
+ *    - corpo diferente (hash da forma canônica — RequestFingerprint, com os
+ *      cabeçalhos de contexto configurados, se houver) → 422
  *      `idempotency_key_reused`, sem executar;
  *    - já concluída → REPLAY da resposta original (StoredResponse), sem
  *      executar;
@@ -109,10 +110,11 @@ final class HandleIdempotencyKey
      * A declaração do middleware na rota, montada.
      *
      * @param  list<string>  $keep
+     * @param  list<string>  $headers  Cabeçalhos de contexto que entram na impressão da requisição (ex.: ['X-Project']).
      */
-    public static function using(bool $required = false, bool $withhold = false, array $keep = [], bool $transactional = false): string
+    public static function using(bool $required = false, bool $withhold = false, array $keep = [], bool $transactional = false, array $headers = []): string
     {
-        return self::ALIAS.':'.implode(',', (new IdempotencyOptions($required, $withhold, $keep, $transactional))->toParameters());
+        return self::ALIAS.':'.implode(',', (new IdempotencyOptions($required, $withhold, $keep, $transactional, $headers))->toParameters());
     }
 
     public function handle(Request $request, Closure $next, string ...$parameters): Response
@@ -122,6 +124,9 @@ final class HandleIdempotencyKey
         }
 
         $options = IdempotencyOptions::parse(array_values($parameters));
+        // Antes da chave: lista inválida na configuração é erro de montagem
+        // em toda requisição, não só nas que trazem a chave.
+        $fingerprintHeaders = $options->fingerprintHeaders();
 
         try {
             $key = IdempotencyKey::fromRequest($request);
@@ -168,7 +173,7 @@ final class HandleIdempotencyKey
 
         $scopeHash = IdempotencyScope::hash($scope);
         $keyHash = $key->hash();
-        $requestHash = RequestFingerprint::hash($request);
+        $requestHash = RequestFingerprint::hash($request, $fingerprintHeaders);
 
         if ($options->transactional) {
             $this->ensureSameConnection();

@@ -6,6 +6,7 @@ namespace Twstec\Kit\Foundation\Idempotency;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use InvalidArgumentException;
 use JsonException;
 use stdClass;
 
@@ -38,7 +39,13 @@ use stdClass;
  *   - `empty`: sem corpo.
  * - `files`: cada arquivo enviado, em qualquer tipo de corpo, como nome
  *   original + tamanho + SHA-256 do conteúdo (o mesmo nome com outro conteúdo
- *   é outra requisição).
+ *   é outra requisição);
+ * - `headers` (SÓ quando há cabeçalhos de contexto configurados —
+ *   `idempotency.fingerprint_headers` ou `headers=` na rota): cada cabeçalho
+ *   da lista, pelo nome em minúsculas e em ordem, com a lista dos valores como
+ *   vieram (`null` quando ausente — ausente e vazio são diferentes). Sem
+ *   lista, o campo NÃO entra, e a forma canônica é exatamente a de antes: as
+ *   chaves já guardadas continuam valendo.
  *
  * Direção segura: na dúvida a forma canônica DISTINGUE (duas requisições
  * equivalentes podem dar hashes diferentes — o cliente recebe a recusa e usa
@@ -51,16 +58,26 @@ final class RequestFingerprint
 
     private const JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR;
 
-    public static function hash(Request $request): string
+    /**
+     * Nome de cabeçalho aceito na lista (os caracteres de `token` do HTTP).
+     */
+    private const HEADER_NAME = '/\A[A-Za-z0-9!#$%&\'*+.^_`|~-]+\z/';
+
+    /**
+     * @param  list<string>  $headers  Cabeçalhos de contexto que entram na impressão (ver headerNames()).
+     */
+    public static function hash(Request $request, array $headers = []): string
     {
-        return hash('sha256', self::canonical($request));
+        return hash('sha256', self::canonical($request, $headers));
     }
 
     /**
      * A forma canônica completa (o que é hasheado). Pública para a
      * documentação e os testes — nunca é gravada.
+     *
+     * @param  list<string>  $headers  Cabeçalhos de contexto que entram na impressão (ver headerNames()).
      */
-    public static function canonical(Request $request): string
+    public static function canonical(Request $request, array $headers = []): string
     {
         $path = '/'.ltrim($request->getPathInfo(), '/');
 
@@ -70,7 +87,66 @@ final class RequestFingerprint
             .',"query":'.self::fields($request->query->all())
             .',"body":'.self::body($request)
             .',"files":'.self::files($request->files->all())
+            .self::headers($request, self::headerNames($headers))
             .'}';
+    }
+
+    /**
+     * A lista de cabeçalhos normalizada: nomes em minúsculas, sem repetição,
+     * em ordem. Nome vazio ou fora do formato de cabeçalho HTTP é erro de
+     * montagem (exceção), nunca um cabeçalho ignorado em silêncio.
+     *
+     * @param  iterable<mixed>  $headers
+     * @return list<string>
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function headerNames(iterable $headers): array
+    {
+        $names = [];
+
+        foreach ($headers as $header) {
+            $name = is_string($header) ? strtolower(trim($header)) : '';
+
+            if (preg_match(self::HEADER_NAME, $name) !== 1) {
+                throw new InvalidArgumentException(sprintf(
+                    'Cabeçalho inválido na impressão da idempotência: "%s" (use o nome do cabeçalho HTTP, como X-Project).',
+                    is_scalar($header) ? (string) $header : get_debug_type($header),
+                ));
+            }
+
+            $names[$name] = true;
+        }
+
+        $names = array_keys($names);
+        sort($names, SORT_STRING);
+
+        return $names;
+    }
+
+    /**
+     * Os cabeçalhos de contexto: vazio sem lista (a forma de sempre); com
+     * lista, `,"headers":{nome:[valores]|null,…}`.
+     *
+     * @param  list<string>  $names
+     */
+    private static function headers(Request $request, array $names): string
+    {
+        if ($names === []) {
+            return '';
+        }
+
+        $parts = [];
+
+        foreach ($names as $name) {
+            $values = $request->headers->has($name)
+                ? array_values(array_map(static fn (?string $value): string => (string) $value, $request->headers->all($name)))
+                : null;
+
+            $parts[] = self::string($name).':'.($values === null ? 'null' : '['.implode(',', array_map(self::string(...), $values)).']');
+        }
+
+        return ',"headers":{'.implode(',', $parts).'}';
     }
 
     private static function body(Request $request): string

@@ -6,6 +6,7 @@ namespace Twstec\Kit\Foundation\Logging;
 
 use Illuminate\Contracts\Config\Repository;
 use Monolog\Formatter\JsonFormatter;
+use Monolog\Handler\NullHandler;
 
 /**
  * O canal de log `request_log` — a SEGUNDA camada das trilhas.
@@ -26,17 +27,67 @@ use Monolog\Formatter\JsonFormatter;
  *
  * Variáveis: LOG_LEVEL (nível, padrão info) e REQUEST_LOG_DAYS (retenção dos
  * arquivos diários, padrão 30).
+ *
+ * NOS TESTES, DESCARTA: com REQUEST_LOG_DISCARD=true (o phpunit.xml dos
+ * starters liga) E o ambiente `testing`, o canal vira um NullHandler — nada
+ * vai para storage/logs (a suíte inteira, rodada a cada verificação, enchia o
+ * disco com dezenas de MB por dia). O evento de log continua sendo disparado:
+ * Log::spy(), Log::shouldReceive() e Log::listen() seguem vendo cada linha.
+ * Fora do ambiente `testing` a variável é ignorada: produção e
+ * desenvolvimento gravam sempre. O teste que precisa do ARQUIVO usa
+ * fileDefinition() com um caminho próprio.
  */
 final class RequestLogChannel
 {
     public const NAME = 'request_log';
 
     /**
-     * A definição padrão do canal.
+     * Variável que liga o descarte nos testes.
+     */
+    public const DISCARD_ENV = 'REQUEST_LOG_DISCARD';
+
+    /**
+     * A definição padrão do canal: o arquivo diário — ou, nos testes com
+     * REQUEST_LOG_DISCARD=true, o descarte.
      *
      * @return array<string, mixed>
      */
     public static function definition(): array
+    {
+        return self::discards() ? self::discardDefinition() : self::fileDefinition();
+    }
+
+    /**
+     * Descartar nesta execução? Só com a variável ligada E no ambiente
+     * `testing` — nunca em produção nem em desenvolvimento.
+     */
+    public static function discards(): bool
+    {
+        return filter_var(env(self::DISCARD_ENV, false), FILTER_VALIDATE_BOOL)
+            && app()->runningUnitTests();
+    }
+
+    /**
+     * O canal que descarta tudo (nos testes).
+     *
+     * @return array<string, mixed>
+     */
+    public static function discardDefinition(): array
+    {
+        return [
+            'name' => self::NAME,
+            'driver' => 'monolog',
+            'handler' => NullHandler::class,
+            'level' => env('LOG_LEVEL', 'info'),
+        ];
+    }
+
+    /**
+     * O canal de verdade: JSON em arquivo diário.
+     *
+     * @return array<string, mixed>
+     */
+    public static function fileDefinition(): array
     {
         return [
             'name' => self::NAME,
