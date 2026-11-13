@@ -54,6 +54,10 @@ export function checkSensitiveAction(
  * código (para `confirmUrl`, com os mesmos dados do pedido). O token de ação
  * sensível nasce e morre no servidor, na requisição da operação — ele nunca
  * chega aqui.
+ *
+ * `passwordless` tira o campo da senha de transação: a confirmação é só o
+ * código por e-mail (a criação de chave de API quando a política do ambiente
+ * pede só o código). O servidor é quem decide; a tela só segue.
  */
 export function SensitiveActionDialog({
     open,
@@ -64,6 +68,7 @@ export function SensitiveActionDialog({
     confirmMethod = 'post',
     data = {},
     onConfirmed,
+    passwordless = false,
 }: {
     open: boolean;
     onClose: () => void;
@@ -73,6 +78,7 @@ export function SensitiveActionDialog({
     confirmMethod?: Method;
     data?: Record<string, unknown>;
     onConfirmed?: () => void;
+    passwordless?: boolean;
 }) {
     const { t } = useTrans();
     const { errors } = usePage().props;
@@ -97,7 +103,9 @@ export function SensitiveActionDialog({
     const sendCode = () => {
         router.post(
             codeUrl,
-            { ...data, stage: 'send', transaction_password: password },
+            passwordless
+                ? { ...data, stage: 'send' }
+                : { ...data, stage: 'send', transaction_password: password },
             {
                 preserveScroll: true,
                 preserveState: true,
@@ -150,29 +158,46 @@ export function SensitiveActionDialog({
                             sendCode();
                         }}
                     >
-                        <p className="text-sm text-muted-foreground">
-                            {t('panel.sensitive.password_hint')}
-                        </p>
-                        <Label htmlFor="sensitive_transaction_password">
-                            {t('auth.ui.transaction_password_title')}
-                        </Label>
-                        <PasswordInput
-                            id="sensitive_transaction_password"
-                            value={password}
-                            onChange={(event) =>
-                                setPassword(event.target.value)
-                            }
-                            autoComplete="off"
-                            autoFocus
-                            aria-invalid={
-                                (errors.transaction_password ?? otherError)
-                                    ? true
-                                    : undefined
-                            }
-                        />
-                        <InputError
-                            message={errors.transaction_password ?? otherError}
-                        />
+                        {passwordless ? (
+                            <>
+                                <p className="text-sm text-muted-foreground">
+                                    {t('panel.sensitive.code_only_hint')}
+                                </p>
+                                <InputError
+                                    message={errors.code ?? otherError}
+                                />
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-sm text-muted-foreground">
+                                    {t('panel.sensitive.password_hint')}
+                                </p>
+                                <Label htmlFor="sensitive_transaction_password">
+                                    {t('auth.ui.transaction_password_title')}
+                                </Label>
+                                <PasswordInput
+                                    id="sensitive_transaction_password"
+                                    value={password}
+                                    onChange={(event) =>
+                                        setPassword(event.target.value)
+                                    }
+                                    autoComplete="off"
+                                    autoFocus
+                                    aria-invalid={
+                                        (errors.transaction_password ??
+                                        otherError)
+                                            ? true
+                                            : undefined
+                                    }
+                                />
+                                <InputError
+                                    message={
+                                        errors.transaction_password ??
+                                        otherError
+                                    }
+                                />
+                            </>
+                        )}
                         <DialogFooter>
                             <Button
                                 type="button"
@@ -183,7 +208,10 @@ export function SensitiveActionDialog({
                             </Button>
                             <Button
                                 type="submit"
-                                disabled={processing || password === ''}
+                                disabled={
+                                    processing ||
+                                    (!passwordless && password === '')
+                                }
                                 data-sensitive-send
                             >
                                 {processing && <Spinner />}

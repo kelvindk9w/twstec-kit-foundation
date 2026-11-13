@@ -89,14 +89,44 @@
                         :placeholder="__('panel.api_keys.name_placeholder')"
                         :error="$errors->first('name')"
                     />
-                    <x-input
-                        :label="__('panel.api_keys.expires_at').' ('.__('panel.common.optional').')'"
-                        name="expiresAt"
-                        type="datetime-local"
-                        wire:model="expiresAt"
-                        :hint="__('panel.api_keys.expires_hint')"
-                        :error="$errors->first('expiresAt')"
-                    />
+                    {{-- Validade escolhida na criação (sem validade, N horas ou N
+                         dias). O componente que não manda `expiryOptions` (cópia
+                         anterior à 2.3.0) segue com a data de antes. --}}
+                    @isset ($expiryOptions)
+                        <div class="grid gap-3 sm:grid-cols-2" data-testid="key-expiry">
+                            <x-select
+                                :label="__('panel.api_keys.expires_at')"
+                                name="expiryUnit"
+                                wire:model.live="expiryUnit"
+                                :error="$errors->first('expiryUnit')"
+                            >
+                                @foreach ($expiryOptions['units'] as $unit)
+                                    <option value="{{ $unit }}">{{ __('panel.api_keys.expiry_unit_'.$unit) }}</option>
+                                @endforeach
+                            </x-select>
+                            @if ($expiryUnit !== 'none')
+                                <x-input
+                                    :label="__('panel.api_keys.expiry_amount')"
+                                    name="expiryAmount"
+                                    type="number"
+                                    min="1"
+                                    :max="$expiryUnit === 'hours' ? $expiryOptions['maxHours'] : $expiryOptions['maxDays']"
+                                    wire:model="expiryAmount"
+                                    :hint="__('panel.api_keys.expiry_amount_hint_'.$expiryUnit, ['max' => $expiryUnit === 'hours' ? $expiryOptions['maxHours'] : $expiryOptions['maxDays']])"
+                                    :error="$errors->first('expiryAmount')"
+                                />
+                            @endif
+                        </div>
+                    @else
+                        <x-input
+                            :label="__('panel.api_keys.expires_at').' ('.__('panel.common.optional').')'"
+                            name="expiresAt"
+                            type="datetime-local"
+                            wire:model="expiresAt"
+                            :hint="__('panel.api_keys.expires_hint')"
+                            :error="$errors->first('expiresAt')"
+                        />
+                    @endisset
                 </div>
 
                 {{-- Scopes: toggle "todas" (padrão) + seleção granular --}}

@@ -33,6 +33,7 @@ import { useTrans } from '@/lib/i18n';
 import { useRoute } from '@/lib/routes';
 import type { FlashData } from '@/types';
 import type {
+    ApiKeyExpiryOptions,
     ApiKeyFormData,
     ApiKeyItem,
     ProjectOption,
@@ -44,6 +45,13 @@ type Props = {
     scopesCatalog: Record<string, string[]>;
     graceOptions: number[];
     canManageKeys: boolean;
+    /**
+     * A partir da 2.3.0: a escolha da validade e a confirmação da criação pela
+     * política do ambiente. Ausentes (cópia anterior do controller), a tela
+     * segue como antes: a data de validade e a senha de transação + código.
+     */
+    expiryOptions?: ApiKeyExpiryOptions;
+    creationRequiresTransactionPassword?: boolean;
 };
 
 type Revealed = NonNullable<FlashData['revealedKey']>;
@@ -55,6 +63,8 @@ type Sensitive =
 const emptyForm: ApiKeyFormData = {
     name: '',
     expires_at: '',
+    expiry_unit: 'none',
+    expiry_amount: '',
     all_scopes: true,
     scopes: [],
     project_uuids: [],
@@ -75,6 +85,8 @@ export default function ApiKeys({
     scopesCatalog,
     graceOptions,
     canManageKeys,
+    expiryOptions,
+    creationRequiresTransactionPassword = true,
 }: Props) {
     const { t } = useTrans();
     const { route } = useRoute();
@@ -106,13 +118,31 @@ export default function ApiKeys({
     );
     const [processing, setProcessing] = useState(false);
 
+    // O que vai ao servidor: a validade no formato que o controller entende.
+    const formPayload = () => {
+        const base = {
+            name: form.name,
+            all_scopes: form.all_scopes,
+            scopes: form.scopes,
+            project_uuids: form.project_uuids,
+        };
+
+        return expiryOptions
+            ? {
+                  ...base,
+                  expiry_unit: form.expiry_unit,
+                  expiry_amount: form.expiry_amount,
+              }
+            : { ...base, expires_at: form.expires_at };
+    };
+
     const dismissSecret = () => {
         setRevealed(null);
         router.flash(() => ({}));
     };
 
     const requestCreate = () =>
-        checkSensitiveAction(route('panel.api-keys.code'), form, () =>
+        checkSensitiveAction(route('panel.api-keys.code'), formPayload(), () =>
             setSensitive({ action: 'create' }),
         );
 
@@ -240,7 +270,13 @@ export default function ApiKeys({
                 <Alert data-needs-transaction-password>
                     <AlertDescription>
                         <span>
-                            {t('panel.api_keys.sensitive_requires_password')}{' '}
+                            {creationRequiresTransactionPassword
+                                ? t(
+                                      'panel.api_keys.sensitive_requires_password',
+                                  )
+                                : t(
+                                      'panel.api_keys.rotate_requires_password',
+                                  )}{' '}
                             <Link
                                 href={route('transaction-password.edit')}
                                 className="font-medium text-foreground underline"
@@ -271,6 +307,7 @@ export default function ApiKeys({
                     }}
                     projects={projects}
                     scopesCatalog={scopesCatalog}
+                    expiryOptions={expiryOptions}
                     processing={sensitive !== null}
                 />
             )}
@@ -469,7 +506,11 @@ export default function ApiKeys({
                 data={
                     sensitive?.action === 'rotate'
                         ? { grace_minutes: sensitive.grace }
-                        : form
+                        : formPayload()
+                }
+                passwordless={
+                    sensitive?.action === 'create' &&
+                    !creationRequiresTransactionPassword
                 }
                 onConfirmed={() => {
                     setSensitive(null);

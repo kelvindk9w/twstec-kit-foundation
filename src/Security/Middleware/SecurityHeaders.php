@@ -7,6 +7,7 @@ namespace Twstec\Kit\Foundation\Security\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Twstec\Kit\Foundation\Security\ReferrerPolicy;
 
 /**
  * Headers HTTP de segurança (OWASP Secure Headers).
@@ -17,6 +18,11 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * HSTS só é enviado sob HTTPS e quando habilitado (padrão: produção) —
  * enviar HSTS em HTTP é inócuo, mas habilitar em dev atrapalha.
+ *
+ * `Referrer-Policy`: a padrão é `security.headers.referrer_policy`; a rota
+ * pode pedir uma MAIS RESTRITA (`referrer.policy:no-referrer`, ou o cabeçalho
+ * posto pela própria resposta), que é mantida — política mais frouxa, não
+ * comparável ou desconhecida é trocada pela padrão (ReferrerPolicy).
  */
 final class SecurityHeaders
 {
@@ -30,7 +36,10 @@ final class SecurityHeaders
 
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('X-Frame-Options', (string) config('security.headers.frame_options', 'DENY'));
-        $response->headers->set('Referrer-Policy', (string) config('security.headers.referrer_policy', 'strict-origin-when-cross-origin'));
+        $response->headers->set(ReferrerPolicy::HEADER, ReferrerPolicy::resolve(
+            $response->headers->get(ReferrerPolicy::HEADER),
+            (string) config('security.headers.referrer_policy', 'strict-origin-when-cross-origin'),
+        ));
         $response->headers->set('Permissions-Policy', (string) config('security.headers.permissions_policy', 'camera=(), microphone=(), geolocation=()'));
 
         $csp = config('security.headers.content_security_policy');

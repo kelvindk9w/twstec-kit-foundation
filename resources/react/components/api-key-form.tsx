@@ -6,10 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTrans } from '@/lib/i18n';
-import type { ApiKeyFormData, ProjectOption } from '@/types/api-keys';
+import type {
+    ApiKeyExpiryOptions,
+    ApiKeyExpiryUnit,
+    ApiKeyFormData,
+    ProjectOption,
+} from '@/types/api-keys';
 
 /**
- * Formulário de CRIAÇÃO de chave (na mesma tela): nome, validade opcional,
+ * Formulário de CRIAÇÃO de chave (na mesma tela): nome, validade (sem
+ * validade, N horas ou N dias — com `expiryOptions`; sem ela, a data de
+ * antes),
  * escopos ("todas as permissões" por padrão, ou a seleção por recurso e
  * ação) e os projetos vinculados (nenhum = a conta toda). As regras são as
  * do servidor (as mesmas da API v1); criar é ação sensível.
@@ -21,6 +28,7 @@ export function ApiKeyForm({
     onCancel,
     projects,
     scopesCatalog,
+    expiryOptions,
     processing,
 }: {
     data: ApiKeyFormData;
@@ -29,6 +37,7 @@ export function ApiKeyForm({
     onCancel: () => void;
     projects: ProjectOption[];
     scopesCatalog: Record<string, string[]>;
+    expiryOptions?: ApiKeyExpiryOptions;
     processing: boolean;
 }) {
     const { t } = useTrans();
@@ -37,6 +46,10 @@ export function ApiKeyForm({
         key: K,
         value: ApiKeyFormData[K],
     ) => onChange({ ...data, [key]: value });
+    const expiryMax =
+        data.expiry_unit === 'hours'
+            ? expiryOptions?.maxHours
+            : expiryOptions?.maxDays;
 
     return (
         <SectionCard title={t('panel.api_keys.create_heading')}>
@@ -66,29 +79,108 @@ export function ApiKeyForm({
                         />
                         <InputError message={errors.name} />
                     </div>
-                    <div className="grid gap-2">
-                        <Label htmlFor="key-expires">
-                            {t('panel.api_keys.expires_at')} (
-                            {t('panel.common.optional')})
-                        </Label>
-                        <Input
-                            id="key-expires"
-                            type="datetime-local"
-                            value={data.expires_at}
-                            onChange={(event) =>
-                                set('expires_at', event.target.value)
-                            }
-                            aria-describedby="key-expires-hint"
-                            aria-invalid={errors.expires_at ? true : undefined}
-                        />
-                        <p
-                            id="key-expires-hint"
-                            className="text-xs text-muted-foreground"
+                    {expiryOptions ? (
+                        <div
+                            className="grid gap-3 sm:grid-cols-2"
+                            data-key-expiry
                         >
-                            {t('panel.api_keys.expires_hint')}
-                        </p>
-                        <InputError message={errors.expires_at} />
-                    </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="key-expiry-unit">
+                                    {t('panel.api_keys.expires_at')}
+                                </Label>
+                                <select
+                                    id="key-expiry-unit"
+                                    value={data.expiry_unit}
+                                    onChange={(event) =>
+                                        onChange({
+                                            ...data,
+                                            expiry_unit: event.target
+                                                .value as ApiKeyExpiryUnit,
+                                            expiry_amount: '',
+                                        })
+                                    }
+                                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs"
+                                    aria-invalid={
+                                        errors.expiry_unit ? true : undefined
+                                    }
+                                >
+                                    {expiryOptions.units.map((unit) => (
+                                        <option key={unit} value={unit}>
+                                            {t(
+                                                `panel.api_keys.expiry_unit_${unit}`,
+                                            )}
+                                        </option>
+                                    ))}
+                                </select>
+                                <InputError message={errors.expiry_unit} />
+                            </div>
+                            {data.expiry_unit !== 'none' && (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="key-expiry-amount">
+                                        {t('panel.api_keys.expiry_amount')}
+                                    </Label>
+                                    <Input
+                                        id="key-expiry-amount"
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={1}
+                                        max={expiryMax}
+                                        value={data.expiry_amount}
+                                        onChange={(event) =>
+                                            set(
+                                                'expiry_amount',
+                                                event.target.value,
+                                            )
+                                        }
+                                        aria-describedby="key-expiry-amount-hint"
+                                        aria-invalid={
+                                            errors.expiry_amount
+                                                ? true
+                                                : undefined
+                                        }
+                                    />
+                                    <p
+                                        id="key-expiry-amount-hint"
+                                        className="text-xs text-muted-foreground"
+                                    >
+                                        {t(
+                                            `panel.api_keys.expiry_amount_hint_${data.expiry_unit}`,
+                                            { max: expiryMax ?? '' },
+                                        )}
+                                    </p>
+                                    <InputError
+                                        message={errors.expiry_amount}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="grid gap-2">
+                            <Label htmlFor="key-expires">
+                                {t('panel.api_keys.expires_at')} (
+                                {t('panel.common.optional')})
+                            </Label>
+                            <Input
+                                id="key-expires"
+                                type="datetime-local"
+                                value={data.expires_at}
+                                onChange={(event) =>
+                                    set('expires_at', event.target.value)
+                                }
+                                aria-describedby="key-expires-hint"
+                                aria-invalid={
+                                    errors.expires_at ? true : undefined
+                                }
+                            />
+                            <p
+                                id="key-expires-hint"
+                                className="text-xs text-muted-foreground"
+                            >
+                                {t('panel.api_keys.expires_hint')}
+                            </p>
+                            <InputError message={errors.expires_at} />
+                        </div>
+                    )}
                 </div>
 
                 <fieldset className="space-y-2">

@@ -19,7 +19,7 @@ nem interface — e um teste de arquitetura na suíte do pacote garante isso.
 
 | Módulo | O que faz |
 | --- | --- |
-| `Security` | Filtro de ataques (XSS, SQLi, null byte, path traversal) com modos observar/bloquear e teto de inspeção; limite de requisições na borda (por IP ou prefixo IPv6) e da API; cabeçalhos de segurança e CSP; allowlist de IP do `/admin` |
+| `Security` | Filtro de ataques (XSS, SQLi, null byte, path traversal) com modos observar/bloquear e teto de inspeção; limite de requisições na borda (por IP ou prefixo IPv6) e da API; cabeçalhos de segurança e CSP (com a `Referrer-Policy` mais restrita por rota, `referrer.policy:<política>`); allowlist de IP do `/admin` |
 | `Http` | Proxies confiáveis e hosts confiáveis (lidos de configuração), redirecionamento seguro, envelope de erro da API, recursos base de API e o health check |
 | `Logging` | Trilha de requisições (`request_logs`, só-acréscimo), correlation id (e o contexto que diz qual vale agora), redação LGPD de payload, mascaramento de cartão nos logs, amostragem de tráfego de varredura |
 | `Tracing` | O correlation id seguindo a operação: no payload de todo job da fila (restaurado no worker), em cada tarefa do agendador e no cabeçalho de toda chamada HTTP de saída; trilha redigida das chamadas de saída (`outbound_http_logs`, só-acréscimo, com gatilho no banco) e o comando `outbound-http:prune` — ver [docs/logs-lgpd.md](https://github.com/kelvindk9w/tws-laravel-starter-kit/blob/desenvolvimento/docs/logs-lgpd.md#rastreio-de-ponta-a-ponta-fila-e-http-de-saída) |

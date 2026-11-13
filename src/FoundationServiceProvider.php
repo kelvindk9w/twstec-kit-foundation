@@ -42,6 +42,7 @@ use Twstec\Kit\Foundation\Logging\RequestLogChannel;
 use Twstec\Kit\Foundation\Security\ApiRateLimit;
 use Twstec\Kit\Foundation\Security\ClientBucket;
 use Twstec\Kit\Foundation\Security\Middleware\EdgeRateLimit;
+use Twstec\Kit\Foundation\Security\Middleware\RestrictReferrerPolicy;
 use Twstec\Kit\Foundation\Security\Middleware\SecurityHeaders;
 use Twstec\Kit\Foundation\Security\Middleware\SecurityValidation;
 use Twstec\Kit\Foundation\Support\Platform;
@@ -130,6 +131,8 @@ final class FoundationServiceProvider extends ServiceProvider
     public const MIDDLEWARE_ALIASES = [
         'security.validation' => SecurityValidation::class,
         'security.headers' => SecurityHeaders::class,
+        // Referrer-Policy mais restrita por rota (nunca mais frouxa).
+        RestrictReferrerPolicy::ALIAS => RestrictReferrerPolicy::class,
         'request.logging' => RequestLogging::class,
         // Idempotency-Key nas escritas da API, por rota (ver
         // Idempotency\Middleware\HandleIdempotencyKey e docs/api.md).

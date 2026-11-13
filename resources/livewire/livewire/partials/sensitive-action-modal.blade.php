@@ -3,7 +3,10 @@
      (chaves de API, verificação em duas etapas no Perfil); o estado e as ações
      vêm do trait App\Livewire\Concerns\ConfirmsSensitiveAction.
 
-     `$sensitiveDescription` (opcional) diz O QUE está sendo confirmado. --}}
+     `$sensitiveDescription` (opcional) diz O QUE está sendo confirmado.
+     `$sensitivePasswordless` (opcional, padrão false) tira o campo da senha de
+     transação: a confirmação é só o código por e-mail (a criação de chave de
+     API quando a política do ambiente pede só o código). --}}
 @if ($pendingAction)
     <x-modal
         id="sensitive-action"
@@ -14,16 +17,24 @@
     >
         @unless ($codeSent)
             <form wire:submit="sendSensitiveCode" class="space-y-4">
-                <p class="text-sm text-text-muted">{{ __('panel.sensitive.password_hint') }}</p>
+                @if ($sensitivePasswordless ?? false)
+                    <p class="text-sm text-text-muted">{{ __('panel.sensitive.code_only_hint') }}</p>
 
-                <x-input
-                    :label="__('auth.ui.transaction_password_title')"
-                    name="sensitivePassword"
-                    type="password"
-                    wire:model="sensitivePassword"
-                    autocomplete="off"
-                    :error="$errors->first('sensitivePassword')"
-                />
+                    @if ($errors->first('sensitiveCode'))
+                        <x-alert type="error">{{ $errors->first('sensitiveCode') }}</x-alert>
+                    @endif
+                @else
+                    <p class="text-sm text-text-muted">{{ __('panel.sensitive.password_hint') }}</p>
+
+                    <x-input
+                        :label="__('auth.ui.transaction_password_title')"
+                        name="sensitivePassword"
+                        type="password"
+                        wire:model="sensitivePassword"
+                        autocomplete="off"
+                        :error="$errors->first('sensitivePassword')"
+                    />
+                @endif
 
                 <div class="flex flex-wrap justify-end gap-2">
                     <x-button type="button" variant="secondary" wire:click="cancelSensitiveAction">{{ __('panel.common.cancel') }}</x-button>

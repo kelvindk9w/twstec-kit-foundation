@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Exception\BadRequestException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -17,6 +18,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use Throwable;
 use Twstec\Kit\Foundation\Http\Exceptions\Contracts\ProvidesApiErrorCode;
+use Twstec\Kit\Foundation\Http\Exceptions\Contracts\ProvidesServerErrorCode;
 use Twstec\Kit\Foundation\Logging\CorrelationId;
 
 /**
@@ -30,7 +32,10 @@ use Twstec\Kit\Foundation\Logging\CorrelationId;
  * Em 422, o envelope ganha `errors` (mapa campo → lista de mensagens).
  *
  * O `code` é o do status (CODES), salvo quando a exceção traz um próprio
- * (Contracts\ProvidesApiErrorCode — ex.: `idempotency_key_reused`).
+ * (Contracts\ProvidesApiErrorCode — ex.: `idempotency_key_reused`). Em 5xx,
+ * só a exceção que se declara pública com Contracts\ProvidesServerErrorCode
+ * leva o código dela (ex.: 503 `provider_not_configured`), com a mensagem de
+ * `api.errors.<code>`; a não tratada, sempre o genérico.
  *
  * Regras inegociáveis:
  * - NUNCA stack trace, classe interna, arquivo ou linha do servidor —
@@ -76,9 +81,7 @@ final class ApiErrorRenderer
 
         // Código próprio da exceção (ex.: os da idempotência), quando ela
         // traz um; senão, o código do status.
-        $code = $e instanceof ProvidesApiErrorCode && $status < 500
-            ? $e->apiErrorCode()
-            : (self::CODES[$status] ?? 'server_error');
+        $code = $this->ownCode($e, $status) ?? (self::CODES[$status] ?? 'server_error');
 
         $payload = [
             'code' => $code,
@@ -107,6 +110,26 @@ final class ApiErrorRenderer
     }
 
     /**
+     * O código próprio da exceção, quando vale: em 4xx, o de
+     * ProvidesApiErrorCode; em 5xx, só o de ProvidesServerErrorCode e só se
+     * for um identificador estável (nada de texto livre no contrato).
+     */
+    private function ownCode(Throwable $e, int $status): ?string
+    {
+        if ($status < 500) {
+            return $e instanceof ProvidesApiErrorCode ? $e->apiErrorCode() : null;
+        }
+
+        if (! $e instanceof ProvidesServerErrorCode) {
+            return null;
+        }
+
+        $code = $e->apiErrorCode();
+
+        return preg_match('/^[a-z][a-z0-9_]{0,63}$/', $code) === 1 ? $code : null;
+    }
+
+    /**
      * Status HTTP da exceção, com os mapeamentos que o Laravel também faz.
      */
     private function status(Throwable $e): int
@@ -132,6 +155,12 @@ final class ApiErrorRenderer
     private function message(Throwable $e, int $status, string $code): string
     {
         if ($status >= 500) {
+            // Código próprio declarado público: a mensagem traduzida dele, se
+            // o aplicativo a definiu. Nunca a mensagem da exceção.
+            if ($e instanceof ProvidesServerErrorCode && $code !== (self::CODES[$status] ?? 'server_error') && Lang::has("api.errors.{$code}")) {
+                return (string) __("api.errors.{$code}");
+            }
+
             return __('api.errors.server_error');
         }
 
