@@ -30,6 +30,7 @@ use Twstec\Kit\Foundation\Customization\PackageConfig;
 use Twstec\Kit\Foundation\Customization\PackageViews;
 use Twstec\Kit\Foundation\Database\Console\CheckDatabaseRoles;
 use Twstec\Kit\Foundation\Database\DatabaseRoles;
+use Twstec\Kit\Foundation\Database\DestructiveCommands;
 use Twstec\Kit\Foundation\Http\Middleware\TrustHosts;
 use Twstec\Kit\Foundation\Http\Middleware\TrustProxies;
 use Twstec\Kit\Foundation\Idempotency\Console\PruneIdempotencyKeys;
@@ -57,7 +58,8 @@ use Twstec\Kit\Foundation\Tracing\Scheduling\ScheduleCorrelation;
  * o canal de log `request_log` (se a aplicação não tiver o dela), o rastreio
  * pelo correlation_id (fila, agendador e HTTP de saída — registerTracing),
  * migrations, views e traduções do e-mail, o singleton da plataforma, a troca
- * do `backup:run`, os limitadores `api` e `sensitive`, as guardas de produção
+ * do `backup:run`, os limitadores `api` e `sensitive`, as guardas de produção,
+ * a recusa dos comandos que apagam o banco em produção (DestructiveCommands)
  * e — o principal — a pilha GLOBAL de middlewares de segurança, na ordem
  * certa. Tudo sozinho: nenhuma proteção depende de a aplicação lembrar de
  * chamar alguma coisa. As duas que se desligam (guardas de produção e
@@ -185,6 +187,12 @@ final class FoundationServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Em produção, os comandos que apagam o banco (db:wipe, migrate:fresh,
+        // migrate:refresh, migrate:reset, migrate:rollback) são recusados,
+        // mesmo com --force. Fora das guardas de produção de propósito:
+        // desligar aquelas não libera apagar o banco.
+        DestructiveCommands::apply($this->app);
+
         $this->registerSecurityMiddleware();
         $this->applyProductionGuards();
         $this->registerRateLimiters();
@@ -227,6 +235,10 @@ final class FoundationServiceProvider extends ServiceProvider
         $events->listen(CommandFinished::class, fn (CommandFinished $event) => $this->app->make(DatabaseRoles::class)->commandFinished($event));
         $events->listen(MigrationsEnded::class, fn (MigrationsEnded $event) => $this->app->make(DatabaseRoles::class)->migrationsFinished($event));
         $events->listen(NoPendingMigrations::class, fn (NoPendingMigrations $event) => $this->app->make(DatabaseRoles::class)->migrationsFinished($event));
+
+        // O comando destrutivo em produção: recusado (aviso no log e, na
+        // saída, como liberar) ou liberado pelo opt-out (aviso no log).
+        $events->listen(CommandStarting::class, fn (CommandStarting $event) => DestructiveCommands::commandStarting($this->app, $event));
     }
 
     /**

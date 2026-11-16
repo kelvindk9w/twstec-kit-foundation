@@ -237,6 +237,23 @@ return [
         'allow_non_delivering_in_production' => (bool) env('MAIL_ALLOW_NON_DELIVERING_IN_PRODUCTION', false),
     ],
 
+    // --- Comandos que apagam o banco -------------------------------------------
+    // Em produção, `db:wipe`, `migrate:fresh`, `migrate:refresh`,
+    // `migrate:reset` e `migrate:rollback` são RECUSADOS, mesmo com --force
+    // (DB::prohibitDestructiveCommands do Laravel). Fora de produção nada
+    // muda. A regra e a justificativa estão em
+    // Twstec\Kit\Foundation\Database\DestructiveCommands.
+    'database' => [
+        // Opt-out consciente, para UM comando planejado (o rollback de uma
+        // migration, com backup antes) ou para a instalação descartável que
+        // recria o banco de propósito (demo hospedada). Passe só no comando
+        // que precisa (`-e DB_ALLOW_DESTRUCTIVE_COMMANDS_IN_PRODUCTION=true`);
+        // cada comando destrutivo que roda com ele grava aviso no log. Só
+        // `true` liga (o env() do Laravel converte `true`/`(true)`): `1`,
+        // `yes`, `on` ou um valor torto não liberam apagar o banco.
+        'allow_destructive_commands_in_production' => env('DB_ALLOW_DESTRUCTIVE_COMMANDS_IN_PRODUCTION', false) === true,
+    ],
+
     // --- Redirecionamento "de volta" (open redirect) ---------------------------
     // Toda rota que devolve o usuário ao endereço anterior (alternador de
     // idioma, `back()`, parâmetros `?redirect=`) só pode redirecionar para
